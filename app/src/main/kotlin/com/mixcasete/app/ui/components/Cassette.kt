@@ -68,6 +68,7 @@ fun Cassette(
             .background(Color(0xFF222222))
     ) {
         // Imagen de fondo del casete (oscurecida)
+        // NOTA: Si no tienes la foto, cambia R.drawable.cassette_photo por R.drawable.ic_launcher
         Image(
             painter = painterResource(id = R.drawable.cassette_photo),
             contentDescription = "Casete",
@@ -120,9 +121,10 @@ fun Reel(modifier: Modifier = Modifier, rotation: Float, tapeRadiusFraction: Flo
             val hubRadius = size.minDimension * 0.2f
             drawCircle(color = Color.White, radius = hubRadius, center = center)
             for (i in 0 until 6) {
-                val angle = i * (2 * PI / 6)
-                val x = (cos(angle) * hubRadius * 0.6f).toFloat()
-                val y = (sin(angle) * hubRadius * 0.6f).toFloat()
+                val angle = i * (2.0 * PI / 6.0)
+                // CORRECCIÓN: Convertir el resultado de cos/sin (Double) a Float antes de multiplicar
+                val x = (cos(angle).toFloat() * hubRadius * 0.6f)
+                val y = (sin(angle).toFloat() * hubRadius * 0.6f)
                 drawCircle(color = Color.Black, radius = hubRadius * 0.2f, center = Offset(center.x + x, center.y + y))
             }
         }
