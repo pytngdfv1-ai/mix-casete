@@ -1,14 +1,14 @@
 package com.mixcasete.app.ui.components
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -18,13 +18,21 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.mixcasete.app.player.CassetteState
 import com.mixcasete.app.player.PlayState
+import com.mixcasete.app.ui.PlayerZones
+import com.mixcasete.app.ui.fillZone
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.min
+import kotlin.math.sin
 
 @Composable
 fun CassettePlayer(
-    isPortrait: Boolean,
+    zones: PlayerZones,
     playState: PlayState,
     isLidOpen: Boolean,
     cassette: CassetteState,
@@ -36,116 +44,188 @@ fun CassettePlayer(
     onFastForward: () -> Unit,
     onToggleCalibration: () -> Unit
 ) {
-    BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(if (isPortrait) 16.dp else 8.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        val maxW = maxWidth
-        val maxH = maxHeight
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize()) {
+            drawBody(zones)
+        }
 
-        val playerWidth = maxW * 0.9f
-        val playerHeight = if (isPortrait) maxH * 0.85f else maxH * 0.95f
+        LcdScreen(
+            modifier = Modifier.fillZone(zones.screen),
+            playState = playState,
+            progress = cassette.progress
+        )
 
-        Box(
+        KnobsStrip(modifier = Modifier.fillZone(zones.knobs))
+
+        CassetteWindow(
+            modifier = Modifier.fillZone(zones.window),
+            isLidOpen = isLidOpen,
+            cassette = cassette,
+            playState = playState
+        )
+
+        Keyboard(
+            modifier = Modifier.fillZone(zones.keyboard),
+            playState = playState,
+            onPlayPause = onPlayPause,
+            onStop = onStop,
+            onEject = onEject,
+            onRewind = onRewind,
+            onFastForward = onFastForward
+        )
+
+        Text(
+            text = "CALIB",
+            color = Color.Red,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier
-                .width(playerWidth)
-                .height(playerHeight)
-        ) {
-            Canvas(modifier = Modifier.fillMaxSize()) {
-                drawPlayerBody(isPortrait, calibrationMode)
-            }
+                .align(Alignment.TopEnd)
+                .padding(2.dp)
+                .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(3.dp))
+                .padding(horizontal = 6.dp, vertical = 2.dp)
+                .clickable { onToggleCalibration() }
+        )
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                PlayerControlsOverlay(
-                    isPortrait = isPortrait,
-                    playState = playState,
-                    onPlayPause = onPlayPause,
-                    onStop = onStop,
-                    onEject = onEject,
-                    onRewind = onRewind,
-                    onFastForward = onFastForward,
-                    onToggleCalibration = onToggleCalibration
-                )
-
-                CassetteWindow(
-                    modifier = Modifier
-                        .fillMaxWidth(0.8f)
-                        .fillMaxHeight(if (isPortrait) 0.4f else 0.6f)
-                        .align(Alignment.TopCenter)
-                        .padding(top = playerHeight * 0.15f),
-                    isLidOpen = isLidOpen,
-                    cassette = cassette,
-                    playState = playState
-                )
+        if (calibrationMode) {
+            for ((name, zone) in zones.namedZones()) {
+                Box(Modifier.fillZone(zone).border(1.dp, Color.Red)) {
+                    Text(name, color = Color.Red, fontSize = 8.sp)
+                }
             }
         }
     }
 }
 
-fun DrawScope.drawPlayerBody(isPortrait: Boolean, calibrationMode: Boolean) {
+private fun DrawScope.drawBody(zones: PlayerZones) {
     val w = size.width
     val h = size.height
-    val stroke = Stroke(width = w * 0.02f)
-    val mainColor = Color(0xFFE8E4D9)
-    val lineColor = Color.Black
+    val line = Color(0xFF111111)
+    val shell = Color(0xFFE9E4D8)
 
-    // Carcasa redondeada de línea gruesa
-    drawRoundRect(color = mainColor, size = size, cornerRadius = CornerRadius(w * 0.05f))
-    drawRoundRect(color = lineColor, size = size, cornerRadius = CornerRadius(w * 0.05f), style = stroke)
-
-    // Rejilla de altavoz (solo vertical)
-    if (isPortrait) {
-        drawSpeakerGrille(Offset(w * 0.1f, h * 0.02f), Size(w * 0.8f, h * 0.1f), lineColor)
+    for (leg in listOf(zones.legL, zones.legR)) {
+        drawRect(color = line, topLeft = Offset(leg.x0 * w, leg.y0 * h), size = Size(leg.w * w, leg.h * h))
     }
 
-    // Franja con perillas y pantallita
-    val stripTop = h * (if (isPortrait) 0.58f else 0.1f)
-    val stripHeight = h * (if (isPortrait) 0.1f else 0.8f)
+    drawRoundRect(color = shell, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f))
+    drawRoundRect(color = line, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f), style = Stroke(width = w * 0.022f))
 
-    if (isPortrait) {
-        drawRect(color = Color(0xFF9DB59D), topLeft = Offset(w * 0.1f, stripTop), size = Size(w * 0.5f, stripHeight))
-        drawRect(color = lineColor, topLeft = Offset(w * 0.1f, stripTop), size = Size(w * 0.5f, stripHeight), style = stroke)
-        for (i in 0 until 3) {
-            drawKnob(Offset(w * (0.7f + i * 0.1f), stripTop + stripHeight / 2), w * 0.04f, lineColor)
+    zones.speaker?.let { sp ->
+        val sx = sp.x0 * w
+        val sy = sp.y0 * h
+        val sw = sp.w * w
+        val sh = sp.h * h
+        drawRoundRect(color = Color.White, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f))
+        drawRoundRect(color = line, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f), style = Stroke(width = w * 0.012f))
+        val step = sw / 24f
+        val cx = sx + sw * 0.36f
+        val cy = sy + sh * 0.52f
+        val clusterR = sw * 0.20f
+        var yy = sy + step
+        while (yy < sy + sh - step * 0.5f) {
+            var xx = sx + step
+            while (xx < sx + sw - step * 0.5f) {
+                val dx = xx - cx
+                val dy = yy - cy
+                if (dx * dx + dy * dy < clusterR * clusterR) {
+                    drawCircle(color = line, radius = step * 0.32f, center = Offset(xx, yy))
+                } else {
+                    drawCircle(color = line, radius = step * 0.30f, center = Offset(xx, yy), style = Stroke(width = step * 0.14f))
+                }
+                xx += step
+            }
+            yy += step
         }
-    } else {
-        for (i in 0 until 3) {
-            drawKnob(Offset(w * 0.15f, stripTop + stripHeight * (0.2f + i * 0.3f)), w * 0.05f, lineColor)
-        }
-        drawRect(color = Color(0xFF9DB59D), topLeft = Offset(w * 0.7f, stripTop + stripHeight * 0.1f), size = Size(w * 0.25f, stripHeight * 0.8f))
-        drawRect(color = lineColor, topLeft = Offset(w * 0.7f, stripTop + stripHeight * 0.1f), size = Size(w * 0.25f, stripHeight * 0.8f), style = stroke)
     }
 
-    // Patas
-    drawRect(color = lineColor, topLeft = Offset(w * 0.1f, h * 0.95f), size = Size(w * 0.1f, h * 0.05f))
-    drawRect(color = lineColor, topLeft = Offset(w * 0.8f, h * 0.95f), size = Size(w * 0.1f, h * 0.05f))
+    run {
+        val sg = zones.segments
+        val sx = sg.x0 * w
+        val sy = sg.y0 * h
+        val sw = sg.w * w
+        val sh = sg.h * h
+        val n = 5
+        val gap = sw * 0.012f
+        val segW = (sw - gap * (n - 1)) / n
+        for (i in 0 until n) {
+            drawRect(color = line, topLeft = Offset(sx + i * (segW + gap), sy), size = Size(segW, sh))
+        }
+    }
 
-    // Modo calibración (debug)
-    if (calibrationMode) {
-        drawRect(color = Color.Red.copy(alpha = 0.2f), size = size)
-        drawRoundRect(color = Color.Red, topLeft = Offset(w * 0.08f, h * 0.12f), size = Size(w * 0.84f, h * 0.42f), style = Stroke(4f))
+    run {
+        val g = zones.sideGrille
+        val gx = g.x0 * w
+        val gy = g.y0 * h
+        val gw = g.w * w
+        val gh = g.h * h
+        for (i in 0 until 4) {
+            drawRect(color = line, topLeft = Offset(gx, gy + gh * i / 4f + gh * 0.1f), size = Size(gw, gh * 0.12f))
+        }
+    }
+
+    run {
+        val wz = zones.window
+        val wx = wz.x0 * w
+        val wy = wz.y0 * h
+        val ww = wz.w * w
+        val wh = wz.h * h
+        val bev = w * 0.018f
+        drawRoundRect(color = Color(0xFFC9C4B8), topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2))
+        drawRoundRect(color = line, topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2), style = Stroke(width = w * 0.010f))
+        drawRoundRect(color = line, topLeft = Offset(wx, wy), size = Size(ww, wh), cornerRadius = CornerRadius(bev), style = Stroke(width = w * 0.008f))
+        drawLine(line, Offset(wx - bev, wy - bev), Offset(wx + bev * 0.6f, wy + bev * 0.6f), strokeWidth = w * 0.006f)
+        drawLine(line, Offset(wx + ww + bev, wy - bev), Offset(wx + ww - bev * 0.6f, wy + bev * 0.6f), strokeWidth = w * 0.006f)
+        drawLine(line, Offset(wx - bev, wy + wh + bev), Offset(wx + bev * 0.6f, wy + wh - bev * 0.6f), strokeWidth = w * 0.006f)
+        drawLine(line, Offset(wx + ww + bev, wy + wh + bev), Offset(wx + ww - bev * 0.6f, wy + wh - bev * 0.6f), strokeWidth = w * 0.006f)
     }
 }
 
-fun DrawScope.drawSpeakerGrille(topLeft: Offset, size: Size, lineColor: Color) {
-    val cols = 15
-    val rows = 4
-    val dotRadius = size.width / cols / 4
-    for (r in 0 until rows) {
-        for (c in 0 until cols) {
-            drawCircle(
-                color = lineColor,
-                radius = dotRadius,
-                center = Offset(topLeft.x + size.width * (c + 0.5f) / cols, topLeft.y + size.height * (r + 0.5f) / rows)
+@Composable
+fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
+    Box(modifier) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            drawRect(color = Color(0xFF111111))
+            drawRect(color = Color(0xFFA8C0A0), topLeft = Offset(w * 0.03f, h * 0.12f), size = Size(w * 0.94f, h * 0.76f))
+            drawRect(color = Color(0xFF223322), topLeft = Offset(w * 0.06f, h * 0.55f), size = Size(w * 0.88f, h * 0.22f), style = Stroke(width = h * 0.04f))
+            drawRect(color = Color(0xFF223322), topLeft = Offset(w * 0.06f, h * 0.55f), size = Size(w * 0.88f * progress, h * 0.22f))
+        }
+        Text(
+            text = when (playState) {
+                PlayState.PLAYING -> "PLAY ${(progress * 100).toInt()}%"
+                PlayState.PAUSED -> "PAUSE ${(progress * 100).toInt()}%"
+                PlayState.STOPPED -> "STOP"
+                PlayState.EJECTED -> "EJECT"
+            },
+            color = Color(0xFF1C2B1C),
+            fontSize = 10.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(start = 8.dp, top = 2.dp)
+        )
+    }
+}
+
+@Composable
+fun KnobsStrip(modifier: Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val r = min(w / 9f, h * 0.42f)
+        for (i in 0 until 3) {
+            val cx = w * (0.2f + i * 0.3f)
+            val cy = h * 0.5f
+            drawCircle(color = Color(0xFF111111), radius = r, center = Offset(cx, cy))
+            drawCircle(color = Color.White, radius = r * 0.82f, center = Offset(cx, cy))
+            val ang = (-60 + i * 45).toDouble() * PI / 180.0
+            drawLine(
+                color = Color(0xFF111111),
+                start = Offset(cx, cy),
+                end = Offset(cx + (cos(ang) * r * 0.7).toFloat(), cy + (sin(ang) * r * 0.7).toFloat()),
+                strokeWidth = r * 0.22f
             )
         }
     }
-}
-
-fun DrawScope.drawKnob(center: Offset, radius: Float, color: Color) {
-    drawCircle(color = color, radius = radius, center = center)
-    drawCircle(color = Color.White, radius = radius * 0.8f, center = center)
-    drawLine(color = color, start = center, end = Offset(center.x + radius * 0.6f, center.y - radius * 0.6f), strokeWidth = radius * 0.2f)
 }
