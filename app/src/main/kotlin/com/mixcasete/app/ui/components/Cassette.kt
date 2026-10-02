@@ -1,27 +1,24 @@
 package com.mixcasete.app.ui.components
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.aspectRatio
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -29,6 +26,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -43,90 +41,96 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 @Composable
-fun Cassette(
-    modifier: Modifier = Modifier,
-    cassette: CassetteState,
-    playState: PlayState
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "reels")
-    val rotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation"
-    )
-
+fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) {
     val isPlaying = playState == PlayState.PLAYING
-
-    Box(
-        modifier = modifier
-            .aspectRatio(1.6f)
-            .clip(RoundedCornerShape(8.dp))
-            .background(Color(0xFF222222))
-    ) {
-        // Imagen de fondo del casete (oscurecida)
-        // NOTA: Si no tienes la foto, cambia R.drawable.cassette_photo por R.drawable.ic_launcher
-        Image(
-            painter = painterResource(id = R.drawable.cassette_photo),
-            contentDescription = "Casete",
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop,
-            colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.1f) })
-        )
-
-        // Etiqueta central
-        Box(
-            modifier = Modifier
-                .fillMaxWidth(0.7f)
-                .fillMaxHeight(0.4f)
-                .align(Alignment.Center)
-                .background(Color(0xFF111111))
-                .padding(4.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(cassette.title, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                Text(cassette.artist, color = Color.LightGray, fontSize = 10.sp, maxLines = 1)
+    val rot = remember { Animatable(0f) }
+    LaunchedEffect(isPlaying) {
+        if (isPlaying) {
+            while (true) {
+                rot.animateTo(rot.value + 360f, tween(1800, easing = LinearEasing))
             }
         }
+    }
+    val rotation = rot.value
 
-        // Carretes (Reels)
-        Row(
-            modifier = Modifier.fillMaxSize(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Reel(rotation = if (isPlaying) rotation else 0f, tapeRadiusFraction = 1f - cassette.progress)
-            Reel(rotation = if (isPlaying) rotation else 0f, tapeRadiusFraction = cassette.progress)
+    BoxWithConstraints(modifier = modifier.clip(RoundedCornerShape(6.dp))) {
+        val cw = maxWidth
+        val ch = maxHeight
+        Box(Modifier.fillMaxSize()) {
+            Image(
+                painter = painterResource(id = R.drawable.cassette_photo),
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                colorFilter = ColorFilter.colorMatrix(ColorMatrix().apply { setToSaturation(0.15f) })
+            )
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
+
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.88f)
+                    .align(Alignment.TopCenter)
+                    .padding(top = ch * 0.05f)
+                    .background(Color(0xDD141414), RoundedCornerShape(3.dp))
+                    .padding(vertical = ch * 0.015f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(cassette.title, color = Color(0xFFF2F2F2), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(cassette.artist, color = Color(0xFFBDBDBD), fontSize = 9.sp, maxLines = 1)
+                }
+            }
+
+            Canvas(Modifier.fillMaxSize()) {
+                val w = size.width
+                val h = size.height
+                for (i in 0 until 7) {
+                    val x = w * (0.465f + i * 0.012f)
+                    drawLine(
+                        color = Color(0xFFDDDDDD),
+                        start = Offset(x, h * 0.44f),
+                        end = Offset(x, h * 0.52f),
+                        strokeWidth = w * 0.004f
+                    )
+                }
+            }
+
+            Reel(
+                modifier = Modifier
+                    .size(ch * 0.66f)
+                    .align(Alignment.TopStart)
+                    .offset(x = cw * 0.325f - ch * 0.33f, y = ch * 0.50f - ch * 0.33f),
+                rotation = rotation,
+                tapeFraction = 1f - cassette.progress
+            )
+            Reel(
+                modifier = Modifier
+                    .size(ch * 0.66f)
+                    .align(Alignment.TopStart)
+                    .offset(x = cw * 0.675f - ch * 0.33f, y = ch * 0.50f - ch * 0.33f),
+                rotation = rotation,
+                tapeFraction = cassette.progress
+            )
         }
     }
 }
 
 @Composable
-fun Reel(modifier: Modifier = Modifier, rotation: Float, tapeRadiusFraction: Float) {
-    Box(modifier = modifier.aspectRatio(1f).fillMaxHeight(0.6f)) {
-        // Disco de cinta
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val maxRadius = size.minDimension / 2
-            val tapeRadius = maxRadius * (0.4f + tapeRadiusFraction * 0.5f)
-            drawCircle(color = Color(0xFF3A2A1A), radius = tapeRadius, center = Offset(size.width / 2, size.height / 2))
+fun Reel(modifier: Modifier, rotation: Float, tapeFraction: Float) {
+    Canvas(modifier.graphicsLayer { rotationZ = rotation }) {
+        val s = size.minDimension
+        val c = Offset(size.width / 2, size.height / 2)
+        val tapeR = s * (0.24f + 0.23f * tapeFraction)
+        drawCircle(color = Color(0xFF2A1D12), radius = tapeR, center = c)
+        drawCircle(color = Color(0xFF1B130C), radius = tapeR, center = c, style = Stroke(width = s * 0.02f))
+        drawCircle(color = Color(0xFF111111), radius = s * 0.20f, center = c)
+        drawCircle(color = Color(0xFFF4F4F4), radius = s * 0.165f, center = c)
+        for (i in 0 until 6) {
+            val a = i * PI / 3.0
+            val tx = c.x + (cos(a) * s * 0.10f).toFloat()
+            val ty = c.y + (sin(a) * s * 0.10f).toFloat()
+            drawCircle(color = Color(0xFF111111), radius = s * 0.035f, center = Offset(tx, ty))
         }
-        
-        // Eje giratorio
-        Canvas(modifier = Modifier.fillMaxSize().graphicsLayer { rotationZ = rotation }) {
-            val center = Offset(size.width / 2, size.height / 2)
-            val hubRadius = size.minDimension * 0.2f
-            drawCircle(color = Color.White, radius = hubRadius, center = center)
-            for (i in 0 until 6) {
-                val angle = i * (2.0 * PI / 6.0)
-                // CORRECCIÓN: Convertir el resultado de cos/sin (Double) a Float antes de multiplicar
-                val x = (cos(angle).toFloat() * hubRadius * 0.6f)
-                val y = (sin(angle).toFloat() * hubRadius * 0.6f)
-                drawCircle(color = Color.Black, radius = hubRadius * 0.2f, center = Offset(center.x + x, center.y + y))
-            }
-        }
+        drawCircle(color = Color(0xFF9E9E9E), radius = s * 0.045f, center = c)
     }
 }
