@@ -72,8 +72,8 @@ fun KeyButton(
             .fillMaxHeight()
             .padding(horizontal = 3.dp)
             .padding(bottom = if (isPressed) 0.dp else 2.dp)
-            .background(if (isPressed) Color(0xFFB9B4A8) else Color(0xFFF4F1E8), RoundedCornerShape(4.dp))
-            .border(width = 2.dp, color = Color(0xFF111111), shape = RoundedCornerShape(4.dp))
+            .background(if (isPressed) Color(0xFF4A4A4A) else Color(0xFF303030), RoundedCornerShape(4.dp))
+            .border(width = 2.dp, color = Color(0xFFC9C9C9), shape = RoundedCornerShape(4.dp))
             .clickable(interactionSource = interactionSource, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
@@ -81,10 +81,10 @@ fun KeyButton(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = Color(0xFF111111),
+                tint = Color(0xFFD6D6D6),
                 modifier = Modifier.fillMaxHeight(0.45f)
             )
-            Text(label, fontSize = 7.sp, fontWeight = FontWeight.Bold, color = Color(0xFF111111))
+            Text(label, fontSize = 7.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD6D6D6))
         }
     }
 }
