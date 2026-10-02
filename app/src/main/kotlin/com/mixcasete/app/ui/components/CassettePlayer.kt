@@ -30,6 +30,11 @@ import kotlin.math.cos
 import kotlin.math.min
 import kotlin.math.sin
 
+private val ShellDark = Color(0xFF262626)
+private val TrimSilver = Color(0xFFC9C9C9)
+private val PanelDark = Color(0xFF1B1B1B)
+private val DetailDark = Color(0xFF444444)
+
 @Composable
 fun CassettePlayer(
     zones: PlayerZones,
@@ -100,23 +105,23 @@ fun CassettePlayer(
 private fun DrawScope.drawBody(zones: PlayerZones) {
     val w = size.width
     val h = size.height
-    val line = Color(0xFF111111)
-    val shell = Color(0xFFE9E4D8)
+    val line = TrimSilver
+    val shell = ShellDark
 
     for (leg in listOf(zones.legL, zones.legR)) {
-        drawRect(color = line, topLeft = Offset(leg.x0 * w, leg.y0 * h), size = Size(leg.w * w, leg.h * h))
+        drawRect(color = Color(0xFF0A0A0A), topLeft = Offset(leg.x0 * w, leg.y0 * h), size = Size(leg.w * w, leg.h * h))
     }
 
     drawRoundRect(color = shell, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f))
-    drawRoundRect(color = line, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f), style = Stroke(width = w * 0.022f))
+    drawRoundRect(color = line, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f), style = Stroke(width = w * 0.012f))
 
     zones.speaker?.let { sp ->
         val sx = sp.x0 * w
         val sy = sp.y0 * h
         val sw = sp.w * w
         val sh = sp.h * h
-        drawRoundRect(color = Color.White, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f))
-        drawRoundRect(color = line, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f), style = Stroke(width = w * 0.012f))
+        drawRoundRect(color = PanelDark, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f))
+        drawRoundRect(color = line, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f), style = Stroke(width = w * 0.008f))
         val step = sw / 24f
         val cx = sx + sw * 0.36f
         val cy = sy + sh * 0.52f
@@ -130,7 +135,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
                 if (dx * dx + dy * dy < clusterR * clusterR) {
                     drawCircle(color = line, radius = step * 0.32f, center = Offset(xx, yy))
                 } else {
-                    drawCircle(color = line, radius = step * 0.30f, center = Offset(xx, yy), style = Stroke(width = step * 0.14f))
+                    drawCircle(color = line.copy(alpha = 0.55f), radius = step * 0.30f, center = Offset(xx, yy), style = Stroke(width = step * 0.12f))
                 }
                 xx += step
             }
@@ -148,7 +153,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
         val gap = sw * 0.012f
         val segW = (sw - gap * (n - 1)) / n
         for (i in 0 until n) {
-            drawRect(color = line, topLeft = Offset(sx + i * (segW + gap), sy), size = Size(segW, sh))
+            drawRect(color = DetailDark, topLeft = Offset(sx + i * (segW + gap), sy), size = Size(segW, sh))
         }
     }
 
@@ -159,7 +164,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
         val gw = g.w * w
         val gh = g.h * h
         for (i in 0 until 4) {
-            drawRect(color = line, topLeft = Offset(gx, gy + gh * i / 4f + gh * 0.1f), size = Size(gw, gh * 0.12f))
+            drawRect(color = DetailDark, topLeft = Offset(gx, gy + gh * i / 4f + gh * 0.1f), size = Size(gw, gh * 0.12f))
         }
     }
 
@@ -170,13 +175,13 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
         val ww = wz.w * w
         val wh = wz.h * h
         val bev = w * 0.018f
-        drawRoundRect(color = Color(0xFFC9C4B8), topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2))
-        drawRoundRect(color = line, topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2), style = Stroke(width = w * 0.010f))
-        drawRoundRect(color = line, topLeft = Offset(wx, wy), size = Size(ww, wh), cornerRadius = CornerRadius(bev), style = Stroke(width = w * 0.008f))
-        drawLine(line, Offset(wx - bev, wy - bev), Offset(wx + bev * 0.6f, wy + bev * 0.6f), strokeWidth = w * 0.006f)
-        drawLine(line, Offset(wx + ww + bev, wy - bev), Offset(wx + ww - bev * 0.6f, wy + bev * 0.6f), strokeWidth = w * 0.006f)
-        drawLine(line, Offset(wx - bev, wy + wh + bev), Offset(wx + bev * 0.6f, wy + wh - bev * 0.6f), strokeWidth = w * 0.006f)
-        drawLine(line, Offset(wx + ww + bev, wy + wh + bev), Offset(wx + ww - bev * 0.6f, wy + wh - bev * 0.6f), strokeWidth = w * 0.006f)
+        drawRoundRect(color = Color(0xFF3A3A3A), topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2))
+        drawRoundRect(color = line, topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2), style = Stroke(width = w * 0.008f))
+        drawRoundRect(color = line, topLeft = Offset(wx, wy), size = Size(ww, wh), cornerRadius = CornerRadius(bev), style = Stroke(width = w * 0.006f))
+        drawLine(line, Offset(wx - bev, wy - bev), Offset(wx + bev * 0.6f, wy + bev * 0.6f), strokeWidth = w * 0.005f)
+        drawLine(line, Offset(wx + ww + bev, wy - bev), Offset(wx + ww - bev * 0.6f, wy + bev * 0.6f), strokeWidth = w * 0.005f)
+        drawLine(line, Offset(wx - bev, wy + wh + bev), Offset(wx + bev * 0.6f, wy + wh - bev * 0.6f), strokeWidth = w * 0.005f)
+        drawLine(line, Offset(wx + ww + bev, wy + wh + bev), Offset(wx + ww - bev * 0.6f, wy + wh - bev * 0.6f), strokeWidth = w * 0.005f)
     }
 }
 
@@ -186,7 +191,7 @@ fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-            drawRect(color = Color(0xFF111111))
+            drawRect(color = TrimSilver)
             drawRect(color = Color(0xFFA8C0A0), topLeft = Offset(w * 0.03f, h * 0.12f), size = Size(w * 0.94f, h * 0.76f))
             drawRect(color = Color(0xFF223322), topLeft = Offset(w * 0.06f, h * 0.55f), size = Size(w * 0.88f, h * 0.22f), style = Stroke(width = h * 0.04f))
             drawRect(color = Color(0xFF223322), topLeft = Offset(w * 0.06f, h * 0.55f), size = Size(w * 0.88f * progress, h * 0.22f))
@@ -217,11 +222,11 @@ fun KnobsStrip(modifier: Modifier) {
         for (i in 0 until 3) {
             val cx = w * (0.2f + i * 0.3f)
             val cy = h * 0.5f
-            drawCircle(color = Color(0xFF111111), radius = r, center = Offset(cx, cy))
-            drawCircle(color = Color.White, radius = r * 0.82f, center = Offset(cx, cy))
+            drawCircle(color = TrimSilver, radius = r, center = Offset(cx, cy))
+            drawCircle(color = Color(0xFF1A1A1A), radius = r * 0.82f, center = Offset(cx, cy))
             val ang = (-60 + i * 45).toDouble() * PI / 180.0
             drawLine(
-                color = Color(0xFF111111),
+                color = TrimSilver,
                 start = Offset(cx, cy),
                 end = Offset(cx + (cos(ang) * r * 0.7).toFloat(), cy + (sin(ang) * r * 0.7).toFloat()),
                 strokeWidth = r * 0.22f
