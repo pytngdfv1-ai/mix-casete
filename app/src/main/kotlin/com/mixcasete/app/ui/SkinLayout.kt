@@ -94,7 +94,7 @@ fun SkinLayout(viewModel: PlayerViewModel = viewModel()) {
     BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFEFEAD8)),
+            .background(Color(0xFF121212)),
         contentAlignment = Alignment.Center
     ) {
         val isPortrait = maxHeight > maxWidth
