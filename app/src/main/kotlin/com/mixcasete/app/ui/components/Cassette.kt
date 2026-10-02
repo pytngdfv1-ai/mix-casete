@@ -66,21 +66,6 @@ fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) 
             )
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.45f)))
 
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(0.88f)
-                    .align(Alignment.TopCenter)
-                    .padding(top = ch * 0.05f)
-                    .background(Color(0xDD141414), RoundedCornerShape(3.dp))
-                    .padding(vertical = ch * 0.015f),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(cassette.title, color = Color(0xFFF2F2F2), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
-                    Text(cassette.artist, color = Color(0xFFBDBDBD), fontSize = 9.sp, maxLines = 1)
-                }
-            }
-
             Canvas(Modifier.fillMaxSize()) {
                 val w = size.width
                 val h = size.height
@@ -111,26 +96,77 @@ fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) 
                 rotation = rotation,
                 tapeFraction = cassette.progress
             )
+
+            // ETIQUETA: se dibuja al final para quedar POR ENCIMA de la cinta y los rodillos
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.88f)
+                    .align(Alignment.TopCenter)
+                    .padding(top = ch * 0.05f)
+                    .background(Color(0xDD141414), RoundedCornerShape(3.dp))
+                    .padding(vertical = ch * 0.015f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(cassette.title, color = Color(0xFFF2F2F2), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                    Text(cassette.artist, color = Color(0xFFBDBDBD), fontSize = 9.sp, maxLines = 1)
+                }
+            }
         }
     }
 }
 
 @Composable
 fun Reel(modifier: Modifier, rotation: Float, tapeFraction: Float) {
-    Canvas(modifier.graphicsLayer { rotationZ = rotation }) {
+    // Paquete de cinta (no gira visualmente): anillos concéntricos
+    Canvas(modifier) {
         val s = size.minDimension
         val c = Offset(size.width / 2, size.height / 2)
         val tapeR = s * (0.24f + 0.23f * tapeFraction)
-        drawCircle(color = Color(0xFF2A1D12), radius = tapeR, center = c)
-        drawCircle(color = Color(0xFF1B130C), radius = tapeR, center = c, style = Stroke(width = s * 0.02f))
-        drawCircle(color = Color(0xFF111111), radius = s * 0.20f, center = c)
-        drawCircle(color = Color(0xFFF4F4F4), radius = s * 0.165f, center = c)
+        drawCircle(color = Color(0xFF241A10), radius = tapeR, center = c)
+        for (i in 1..4) {
+            drawCircle(
+                color = Color(0xFF3A2A1A),
+                radius = tapeR * (i / 5f),
+                center = c,
+                style = Stroke(width = s * 0.006f)
+            )
+        }
+        drawCircle(color = Color(0xFF120C06), radius = tapeR, center = c, style = Stroke(width = s * 0.015f))
+    }
+
+    // Parte giratoria: hub blanco con radios, engranaje negro y pin metálico
+    Canvas(modifier.graphicsLayer { rotationZ = rotation }) {
+        val s = size.minDimension
+        val c = Offset(size.width / 2, size.height / 2)
+        val hubR = s * 0.21f
+
+        drawCircle(color = Color(0xFFE8E8E8), radius = hubR, center = c)
+        drawCircle(color = Color(0xFFB5B5B5), radius = hubR, center = c, style = Stroke(width = s * 0.008f))
+
+        for (i in 0 until 12) {
+            val a = i * PI / 6.0
+            drawLine(
+                color = Color(0xFFC9C9C9),
+                start = Offset(c.x + cos(a).toFloat() * hubR * 0.55f, c.y + sin(a).toFloat() * hubR * 0.55f),
+                end = Offset(c.x + cos(a).toFloat() * hubR * 0.92f, c.y + sin(a).toFloat() * hubR * 0.92f),
+                strokeWidth = s * 0.012f
+            )
+        }
+
+        val cogR = hubR * 0.52f
+        drawCircle(color = Color(0xFF111111), radius = cogR, center = c)
         for (i in 0 until 6) {
             val a = i * PI / 3.0
-            val tx = c.x + (cos(a) * s * 0.10f).toFloat()
-            val ty = c.y + (sin(a) * s * 0.10f).toFloat()
-            drawCircle(color = Color(0xFF111111), radius = s * 0.035f, center = Offset(tx, ty))
+            drawCircle(
+                color = Color(0xFF111111),
+                radius = cogR * 0.30f,
+                center = Offset(c.x + cos(a).toFloat() * cogR * 1.05f, c.y + sin(a).toFloat() * cogR * 1.05f)
+            )
         }
-        drawCircle(color = Color(0xFF9E9E9E), radius = s * 0.045f, center = c)
+
+        drawCircle(color = Color(0xFFF2F2F2), radius = cogR * 0.45f, center = c)
+        drawCircle(color = Color(0xFF8F8F8F), radius = cogR * 0.20f, center = c)
+        drawCircle(color = Color(0xFF5E5E5E), radius = cogR * 0.10f, center = c)
     }
 }
