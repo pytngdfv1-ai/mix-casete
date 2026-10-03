@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.QueueMusic
@@ -75,7 +77,8 @@ fun CassettePlayer(
     onNext: () -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
-    onFavorite: () -> Unit
+    onFavorite: () -> Unit,
+    onShare: () -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
@@ -124,6 +127,16 @@ fun CassettePlayer(
             onRewind = onRewind,
             onFastForward = onFastForward
         )
+
+        IconButton(
+            onClick = onShare,
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(4.dp)
+                .size(36.dp)
+        ) {
+            Icon(Icons.Filled.Cast, contentDescription = "Compartir con TV", tint = ActiveGreen)
+        }
 
         errorInfo?.let { info ->
             Text(
