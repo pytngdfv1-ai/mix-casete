@@ -34,8 +34,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mixcasete.app.R
-import com.mixcasete.app.player.CassetteState
-import com.mixcasete.app.player.PlayState
+import com.mixcasete.app.audio.CassetteState
+import com.mixcasete.app.audio.PlayState
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -97,7 +97,6 @@ fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) 
                 tapeFraction = cassette.progress
             )
 
-            // ETIQUETA: se dibuja al final para quedar POR ENCIMA de la cinta y los rodillos
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.88f)
@@ -118,7 +117,6 @@ fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) 
 
 @Composable
 fun Reel(modifier: Modifier, rotation: Float, tapeFraction: Float) {
-    // Paquete de cinta (no gira visualmente): anillos concéntricos
     Canvas(modifier) {
         val s = size.minDimension
         val c = Offset(size.width / 2, size.height / 2)
@@ -135,7 +133,6 @@ fun Reel(modifier: Modifier, rotation: Float, tapeFraction: Float) {
         drawCircle(color = Color(0xFF120C06), radius = tapeR, center = c, style = Stroke(width = s * 0.015f))
     }
 
-    // Parte giratoria: hub blanco con radios, engranaje negro y pin metálico
     Canvas(modifier.graphicsLayer { rotationZ = rotation }) {
         val s = size.minDimension
         val c = Offset(size.width / 2, size.height / 2)
