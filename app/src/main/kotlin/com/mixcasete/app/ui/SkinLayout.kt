@@ -1,6 +1,8 @@
 package com.mixcasete.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -18,6 +20,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -195,9 +198,18 @@ private fun OverlayPanel(
     onClose: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    // Fondo oscuro: tocar FUERA del panel lo cierra
     Box(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClose
+            )
     ) {
+        // Panel: tocar DENTRO no cierra
         Box(
             modifier = Modifier
                 .then(
@@ -214,24 +226,31 @@ private fun OverlayPanel(
                     }
                 )
                 .background(Color(0xFF1C1C1C))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = { }
+                )
         ) {
-            content()
-            
-            // Botón X pequeño y bien posicionado
+            // El contenido baja 40dp para que la X no tape la lupa ni el botón "+"
+            Box(Modifier.fillMaxSize().padding(top = 40.dp)) {
+                content()
+            }
+
             IconButton(
                 onClick = onClose,
                 modifier = Modifier
                     .align(Alignment.TopEnd)
-                    .padding(8.dp)
-                    .size(32.dp)
+                    .padding(6.dp)
+                    .size(30.dp)
                     .clip(CircleShape)
                     .background(Color(0xFF3A3A3A))
             ) {
                 Icon(
-                    Icons.Filled.Close, 
-                    contentDescription = "Cerrar", 
+                    Icons.Filled.Close,
+                    contentDescription = "Cerrar",
                     tint = Color(0xFFD6D6D6),
-                    modifier = Modifier.size(18.dp)
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }
