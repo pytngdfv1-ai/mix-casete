@@ -54,13 +54,17 @@ fun CassettePlayer(
             drawBody(zones)
         }
 
-        LcdScreen(
-            modifier = Modifier.fillZone(zones.screen),
-            playState = playState,
-            progress = cassette.progress
-        )
+        zones.screen?.let {
+            LcdScreen(
+                modifier = Modifier.fillZone(it),
+                playState = playState,
+                progress = cassette.progress
+            )
+        }
 
-        KnobsStrip(modifier = Modifier.fillZone(zones.knobs))
+        zones.knobs?.let {
+            KnobsStrip(modifier = Modifier.fillZone(it))
+        }
 
         CassetteWindow(
             modifier = Modifier.fillZone(zones.window),
@@ -143,8 +147,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
         }
     }
 
-    run {
-        val sg = zones.segments
+    zones.segments?.let { sg ->
         val sx = sg.x0 * w
         val sy = sg.y0 * h
         val sw = sg.w * w
@@ -157,8 +160,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
         }
     }
 
-    run {
-        val g = zones.sideGrille
+    zones.sideGrille?.let { g ->
         val gx = g.x0 * w
         val gy = g.y0 * h
         val gw = g.w * w
