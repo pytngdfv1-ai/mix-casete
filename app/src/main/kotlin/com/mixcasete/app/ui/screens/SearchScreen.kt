@@ -7,13 +7,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
@@ -33,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.AudioPlayerViewModel
@@ -53,25 +54,34 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
                     placeholder = { Text("Buscar tema o artista...") },
-                    singleLine = true
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(
+                        onSearch = { viewModel.search(query) }
+                    )
                 )
-                IconButton(onClick = { viewModel.search(query) }) {
+                IconButton(
+                    onClick = { viewModel.search(query) },
+                    modifier = Modifier
+                        .size(48.dp)
+                        .background(Color(0xFF3A3A3A), RoundedCornerShape(8.dp))
+                ) {
                     Icon(
                         imageVector = Icons.Filled.Search,
                         contentDescription = "Buscar",
-                        tint = Color(0xFFD6D6D6)
+                        tint = Color(0xFF81C784)
                     )
                 }
             }
 
-            LazyColumn(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
                 items(results) { result ->
                     Row(
                         modifier = Modifier
