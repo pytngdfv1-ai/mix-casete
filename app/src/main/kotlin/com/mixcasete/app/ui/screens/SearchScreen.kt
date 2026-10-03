@@ -26,7 +26,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,9 +38,12 @@ import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.ui.components.RemoteImage
 
+// Estado a nivel de archivo: el texto escrito sobrevive al cerrar y reabrir el panel
+private val searchQueryState = mutableStateOf("")
+
 @Composable
 fun SearchContent(viewModel: AudioPlayerViewModel) {
-    var query by remember { mutableStateOf("") }
+    var query by searchQueryState
     val results by viewModel.searchResults.collectAsState()
 
     MaterialTheme(colorScheme = darkColorScheme()) {
@@ -49,7 +51,7 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF1C1C1C))
-                .padding(8.dp)
+                .padding(horizontal = 8.dp, vertical = 4.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -71,7 +73,7 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
                     onClick = { viewModel.search(query) },
                     modifier = Modifier
                         .size(48.dp)
-                        .background(Color(0xFF3A3A3A), RoundedCornerShape(8.dp))
+                        .background(Color(0xFF2E4A2E), RoundedCornerShape(8.dp))
                 ) {
                     Icon(
                         imageVector = Icons.Filled.Search,
@@ -79,6 +81,15 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
                         tint = Color(0xFF81C784)
                     )
                 }
+            }
+
+            if (results.isEmpty() && query.isNotBlank()) {
+                Text(
+                    text = "Pulsa la lupa o Enter para buscar",
+                    color = Color(0xFF888888),
+                    fontSize = 11.sp,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
