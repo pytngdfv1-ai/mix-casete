@@ -9,8 +9,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import com.mixcasete.app.player.CassetteState
-import com.mixcasete.app.player.PlayState
+import com.mixcasete.app.audio.CassetteState
+import com.mixcasete.app.audio.PlayState
 
 @Composable
 fun CassetteWindow(
