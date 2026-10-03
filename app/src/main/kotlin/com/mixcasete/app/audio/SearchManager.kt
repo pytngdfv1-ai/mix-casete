@@ -8,8 +8,8 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.search.SearchInfo
-import org.schabi.newpipe.extractor.stream.StreamExtractor
 import org.schabi.newpipe.extractor.stream.StreamInfo
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -20,6 +20,7 @@ data class SearchResult(
     val title: String,
     val artist: String,
     val thumbnailUrl: String?,
+    val videoUrl: String? = null,
     val isPreview: Boolean = false
 )
 
@@ -73,48 +74,36 @@ class SearchManager(private val context: Context) {
         var youTubeError: String? = null
         val youTubeResults = mutableListOf<SearchResult>()
 
-        // Intento 1: YouTube con streams completos
         try {
             val service = ServiceList.YouTube
             val searchHandler = service.searchQHFactory.fromQuery(query)
             val searchInfo = SearchInfo.getInfo(service, searchHandler)
-            
+
             for (item in searchInfo.relatedItems.take(20)) {
-                if (item is org.schabi.newpipe.extractor.stream.StreamInfoItem) {
-                    // Obtener el stream extractor para acceder a URLs de audio completas
+                if (item is StreamInfoItem) {
+                    var audioUrl: String? = null
                     try {
                         val extractor = service.getStreamExtractor(item.url)
                         extractor.fetchPage()
                         val streamInfo = StreamInfo.getInfo(extractor)
-                        
-                        // Buscar el mejor stream de audio
-                        val audioStreams = streamInfo.audioStreams
-                        if (audioStreams.isNotEmpty()) {
-                            val bestAudio = audioStreams.maxByOrNull { it.bitrate }
-                            if (bestAudio != null && bestAudio.content.isNotEmpty()) {
-                                youTubeResults.add(
-                                    SearchResult(
-                                        url = bestAudio.content,
-                                        title = streamInfo.name,
-                                        artist = streamInfo.uploaderName,
-                                        thumbnailUrl = null,
-                                        isPreview = false  // YouTube da canciones completas
-                                    )
-                                )
-                            }
+                        val bestAudio = streamInfo.audioStreams.maxByOrNull { it.bitrate }
+                        if (bestAudio != null && bestAudio.content.isNotEmpty()) {
+                            audioUrl = bestAudio.content
                         }
                     } catch (e: Exception) {
-                        // Si falla obtener el stream, usamos la URL del video como fallback
-                        youTubeResults.add(
-                            SearchResult(
-                                url = item.url,
-                                title = item.name,
-                                artist = item.uploaderName,
-                                thumbnailUrl = null,
-                                isPreview = false
-                            )
-                        )
+                        audioUrl = null
                     }
+
+                    youTubeResults.add(
+                        SearchResult(
+                            url = audioUrl ?: item.url,
+                            title = item.name,
+                            artist = item.uploaderName,
+                            thumbnailUrl = null,
+                            videoUrl = item.url,
+                            isPreview = false
+                        )
+                    )
                 }
             }
         } catch (e: Exception) {
@@ -122,10 +111,9 @@ class SearchManager(private val context: Context) {
         }
 
         if (youTubeResults.isNotEmpty()) {
-            return@withContext SearchOutcome(youTubeResults, null, "YouTube (canciones completas)")
+            return@withContext SearchOutcome(youTubeResults, null, "YouTube")
         }
 
-        // Intento 2: iTunes (previews de 30s con carátula) - solo como último recurso
         var itunesError: String? = null
         val itunesResults = mutableListOf<SearchResult>()
         try {
@@ -149,7 +137,8 @@ class SearchManager(private val context: Context) {
                             title = track.optString("trackName", "Sin título"),
                             artist = track.optString("artistName", "Desconocido"),
                             thumbnailUrl = track.optString("artworkUrl100", "").ifEmpty { null },
-                            isPreview = true  // iTunes da previews de 30s
+                            videoUrl = null,
+                            isPreview = true
                         )
                     )
                 }
