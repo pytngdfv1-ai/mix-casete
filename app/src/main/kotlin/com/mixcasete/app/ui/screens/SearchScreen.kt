@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,13 +39,14 @@ import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.ui.components.RemoteImage
 
-// Estado a nivel de archivo: el texto escrito sobrevive al cerrar y reabrir el panel
 private val searchQueryState = mutableStateOf("")
 
 @Composable
 fun SearchContent(viewModel: AudioPlayerViewModel) {
     var query by searchQueryState
     val results by viewModel.searchResults.collectAsState()
+    val isSearching by viewModel.isSearching.collectAsState()
+    val searchError by viewModel.searchError.collectAsState()
 
     MaterialTheme(colorScheme = darkColorScheme()) {
         Column(
@@ -83,13 +85,33 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
                 }
             }
 
-            if (results.isEmpty() && query.isNotBlank()) {
-                Text(
-                    text = "Pulsa la lupa o Enter para buscar",
-                    color = Color(0xFF888888),
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(top = 8.dp)
-                )
+            when {
+                isSearching -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp),
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        CircularProgressIndicator(color = Color(0xFF81C784))
+                    }
+                }
+                searchError != null -> {
+                    Text(
+                        text = "Error de búsqueda: ${searchError}",
+                        color = Color(0xFFE57373),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
+                results.isEmpty() && query.isNotBlank() -> {
+                    Text(
+                        text = "Pulsa la lupa o Enter para buscar",
+                        color = Color(0xFF888888),
+                        fontSize = 11.sp,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                }
             }
 
             LazyColumn(modifier = Modifier.fillMaxSize().padding(top = 8.dp)) {
