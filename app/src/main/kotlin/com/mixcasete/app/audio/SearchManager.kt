@@ -58,12 +58,23 @@ class SearchManager(private val context: Context) {
 
             for (item in items.take(20)) {
                 if (item is StreamInfoItem) {
+                    val thumbnailUrl = try {
+                        val thumbnails = item.thumbnails
+                        if (thumbnails.isNotEmpty()) {
+                            thumbnails[0].url
+                        } else {
+                            null
+                        }
+                    } catch (e: Exception) {
+                        null
+                    }
+                    
                     results.add(
                         SearchResult(
                             url = item.url,
                             title = item.name,
                             artist = item.uploaderName,
-                            thumbnailUrl = item.thumbnails?.firstOrNull()?.url
+                            thumbnailUrl = thumbnailUrl
                         )
                     )
                 }
