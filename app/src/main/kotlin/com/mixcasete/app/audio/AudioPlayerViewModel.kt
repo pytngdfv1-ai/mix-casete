@@ -87,6 +87,9 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _currentSongIndex = MutableStateFlow(0)
     val currentSongIndex: StateFlow<Int> = _currentSongIndex.asStateFlow()
 
+    private val _currentVideoUrl = MutableStateFlow<String?>(null)
+    val currentVideoUrl: StateFlow<String?> = _currentVideoUrl.asStateFlow()
+
     private val _isShuffleEnabled = MutableStateFlow(false)
     val isShuffleEnabled: StateFlow<Boolean> = _isShuffleEnabled.asStateFlow()
 
@@ -251,6 +254,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
+    fun pauseForTv() {
+        controller?.pause()
+        _playState.value = PlayState.PAUSED
+    }
+
     fun stop() {
         controller?.stop()
         controller?.clearMediaItems()
@@ -308,10 +316,13 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 artist = result.artist,
                 thumbnailUrl = result.thumbnailUrl
             )
+            song.videoUrl = result.videoUrl
             val songId = songDao.insertSong(song)
             val savedSong = song.copy(id = songId)
+            savedSong.videoUrl = result.videoUrl
             _currentPlaylist.value = listOf(savedSong)
             _currentSongIndex.value = 0
+            _currentVideoUrl.value = result.videoUrl
             playSongAt(0)
             _showSearchScreen.value = false
         }
@@ -350,6 +361,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
         val song = _currentPlaylist.value[index]
         _currentSongIndex.value = index
+        _currentVideoUrl.value = song.videoUrl
         currentSource = AudioSource(
             url = song.url,
             type = SourceType.YOUTUBE,
@@ -479,7 +491,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 .build()
 
-        controller?.setMediaItem(mediaItem)
+            controller?.setMediaItem(mediaItem)
             controller?.prepare()
             controller?.play()
         } else {
