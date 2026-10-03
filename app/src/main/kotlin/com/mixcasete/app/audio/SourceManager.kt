@@ -3,15 +3,15 @@ package com.mixcasete.app.audio
 import android.content.Context
 import android.net.Uri
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.exceptions.ExtractionException
-import org.schabi.newpipe.extractor.services.youtube.YoutubeService
+import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandlerFactory
+import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
-import org.schabi.newpipe.extractor.stream.AudioStream
+import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
 
 data class AudioSource(
@@ -28,7 +28,6 @@ enum class SourceType {
 class SourceManager(private val context: Context) {
     
     init {
-        // Inicializar NewPipe Extractor
         try {
             NewPipe.init(object : Downloader() {
                 override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
@@ -65,7 +64,6 @@ class SourceManager(private val context: Context) {
     ): AudioSource? = withContext(Dispatchers.IO) {
         val sources = mutableListOf<AudioSource>()
         
-        // Fuente 1: YouTube via NewPipe Extractor
         try {
             val youtubeSource = getYouTubeSource(searchQuery)
             if (youtubeSource != null) {
@@ -75,7 +73,6 @@ class SourceManager(private val context: Context) {
             e.printStackTrace()
         }
         
-        // Fuente 2: Archivo local
         if (localUri != null) {
             sources.add(
                 AudioSource(
@@ -87,7 +84,6 @@ class SourceManager(private val context: Context) {
             )
         }
         
-        // Fuente 3: Preview Deezer/iTunes (30 segundos)
         try {
             val previewSource = getPreviewSource(searchQuery)
             if (previewSource != null) {
@@ -97,7 +93,6 @@ class SourceManager(private val context: Context) {
             e.printStackTrace()
         }
         
-        // Si hay fuente actual, encontrar la siguiente
         if (currentSource != null) {
             val currentIndex = sources.indexOfFirst { it.url == currentSource.url }
             if (currentIndex >= 0 && currentIndex < sources.size - 1) {
@@ -105,38 +100,39 @@ class SourceManager(private val context: Context) {
             }
         }
         
-        // Devolver la primera disponible
         return@withContext sources.firstOrNull()
     }
 
     private suspend fun getYouTubeSource(query: String): AudioSource? = withContext(Dispatchers.IO) {
         try {
             val service = ServiceList.YouTube
-            val searchQuery = "https://www.youtube.com/results?search_query=${query.replace(" ", "+")}"
-            
-            val searchExtractor = service.searchExtractorFactory.fromQuery(searchQuery)
+            val searchHandler = service.searchQHFactory.fromQuery(query)
+            val searchExtractor = service.getSearchExtractor(searchHandler)
             searchExtractor.fetchPage()
             
-            val items = searchExtractor.initialPage.items
+            val searchInfo = SearchInfo.getInfo(service, searchExtractor)
+            val items = searchInfo.relatedItems
+            
             if (items.isNotEmpty()) {
-                val firstVideo = items[0]
-                val streamUrl = firstVideo.url
-                
-                val streamExtractor = service.streamExtractorFactory.fromUrl(streamUrl)
-                streamExtractor.fetchPage()
-                
-                val streamInfo = StreamInfo.getInfo(streamExtractor)
-                val audioStreams = streamInfo.audioStreams
-                
-                if (audioStreams.isNotEmpty()) {
-                    val bestAudio = audioStreams.maxByOrNull { it.bitrate }
-                    if (bestAudio != null) {
-                        return@withContext AudioSource(
-                            url = bestAudio.content,
-                            type = SourceType.YOUTUBE,
-                            title = streamInfo.name,
-                            artist = streamInfo.uploaderName
-                        )
+                val firstItem = items[0]
+                if (firstItem is StreamInfoItem) {
+                    val streamUrl = firstItem.url
+                    val streamExtractor = service.getStreamExtractor(streamUrl)
+                    streamExtractor.fetchPage()
+                    
+                    val streamInfo = StreamInfo.getInfo(streamExtractor)
+                    val audioStreams = streamInfo.audioStreams
+                    
+                    if (audioStreams.isNotEmpty()) {
+                        val bestAudio = audioStreams.maxByOrNull { it.bitrate }
+                        if (bestAudio != null) {
+                            return@withContext AudioSource(
+                                url = bestAudio.content,
+                                type = SourceType.YOUTUBE,
+                                title = streamInfo.name,
+                                artist = streamInfo.uploaderName
+                            )
+                        }
                     }
                 }
             }
@@ -150,7 +146,6 @@ class SourceManager(private val context: Context) {
 
     private suspend fun getPreviewSource(query: String): AudioSource? = withContext(Dispatchers.IO) {
         try {
-            // iTunes Search API para previews de 30 segundos
             val searchUrl = "https://itunes.apple.com/search?term=${query.replace(" ", "+")}&media=music&limit=1"
             val connection = java.net.URL(searchUrl).openConnection() as java.net.HttpURLConnection
             connection.requestMethod = "GET"
