@@ -4,10 +4,24 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.QueueMusic
+import androidx.compose.material.icons.filled.Repeat
+import androidx.compose.material.icons.filled.RepeatOne
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Shuffle
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,6 +38,7 @@ import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.CassetteState
 import com.mixcasete.app.audio.ErrorInfo
 import com.mixcasete.app.audio.PlayState
+import com.mixcasete.app.audio.RepeatMode
 import com.mixcasete.app.ui.PlayerZones
 import com.mixcasete.app.ui.fillZone
 import kotlin.math.PI
@@ -35,6 +50,7 @@ private val ShellDark = Color(0xFF262626)
 private val TrimSilver = Color(0xFFC9C9C9)
 private val PanelDark = Color(0xFF1B1B1B)
 private val DetailDark = Color(0xFF444444)
+private val ActiveGreen = Color(0xFF81C784)
 
 @Composable
 fun CassettePlayer(
@@ -44,12 +60,22 @@ fun CassettePlayer(
     cassette: CassetteState,
     calibrationMode: Boolean,
     errorInfo: ErrorInfo?,
+    isShuffle: Boolean,
+    repeatMode: RepeatMode,
+    isFavorite: Boolean,
     onPlayPause: () -> Unit,
     onStop: () -> Unit,
     onEject: () -> Unit,
     onRewind: () -> Unit,
     onFastForward: () -> Unit,
-    onToggleCalibration: () -> Unit
+    onToggleCalibration: () -> Unit,
+    onSearch: () -> Unit,
+    onLists: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onShuffle: () -> Unit,
+    onRepeat: () -> Unit,
+    onFavorite: () -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) {
@@ -73,6 +99,20 @@ fun CassettePlayer(
             isLidOpen = isLidOpen,
             cassette = cassette,
             playState = playState
+        )
+
+        FunctionBar(
+            modifier = Modifier.fillZone(zones.functionBar),
+            isShuffle = isShuffle,
+            repeatMode = repeatMode,
+            isFavorite = isFavorite,
+            onSearch = onSearch,
+            onLists = onLists,
+            onPrev = onPrev,
+            onNext = onNext,
+            onShuffle = onShuffle,
+            onRepeat = onRepeat,
+            onFavorite = onFavorite
         )
 
         Keyboard(
@@ -122,6 +162,61 @@ fun CassettePlayer(
     }
 }
 
+@Composable
+fun FunctionBar(
+    modifier: Modifier,
+    isShuffle: Boolean,
+    repeatMode: RepeatMode,
+    isFavorite: Boolean,
+    onSearch: () -> Unit,
+    onLists: () -> Unit,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onShuffle: () -> Unit,
+    onRepeat: () -> Unit,
+    onFavorite: () -> Unit
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        IconButton(onClick = onSearch, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.Search, contentDescription = "Buscar", tint = TrimSilver)
+        }
+        IconButton(onClick = onLists, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.QueueMusic, contentDescription = "Listas", tint = TrimSilver)
+        }
+        IconButton(onClick = onPrev, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.SkipPrevious, contentDescription = "Anterior", tint = TrimSilver)
+        }
+        IconButton(onClick = onNext, modifier = Modifier.weight(1f)) {
+            Icon(Icons.Filled.SkipNext, contentDescription = "Siguiente", tint = TrimSilver)
+        }
+        IconButton(onClick = onShuffle, modifier = Modifier.weight(1f)) {
+            Icon(
+                Icons.Filled.Shuffle,
+                contentDescription = "Aleatorio",
+                tint = if (isShuffle) ActiveGreen else Color(0xFF777777)
+            )
+        }
+        IconButton(onClick = onRepeat, modifier = Modifier.weight(1f)) {
+            Icon(
+                imageVector = if (repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
+                contentDescription = "Repetir",
+                tint = if (repeatMode == RepeatMode.OFF) Color(0xFF777777) else ActiveGreen
+            )
+        }
+        IconButton(onClick = onFavorite, modifier = Modifier.weight(1f)) {
+            Icon(
+                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                contentDescription = "Favorito",
+                tint = if (isFavorite) Color(0xFFE57373) else TrimSilver
+            )
+        }
+    }
+}
+
 private fun DrawScope.drawBody(zones: PlayerZones) {
     val w = size.width
     val h = size.height
@@ -160,19 +255,6 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
                 xx += step
             }
             yy += step
-        }
-    }
-
-    zones.segments?.let { sg ->
-        val sx = sg.x0 * w
-        val sy = sg.y0 * h
-        val sw = sg.w * w
-        val sh = sg.h * h
-        val n = 5
-        val gap = sw * 0.012f
-        val segW = (sw - gap * (n - 1)) / n
-        for (i in 0 until n) {
-            drawRect(color = DetailDark, topLeft = Offset(sx + i * (segW + gap), sy), size = Size(segW, sh))
         }
     }
 
