@@ -16,7 +16,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.mixcasete.app.player.PlayerViewModel
+import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.ui.components.CassettePlayer
 import kotlin.math.roundToInt
 
@@ -59,7 +59,6 @@ fun portraitZones() = PlayerZones(
     legR = Zone(0.80f, 0.965f, 0.90f, 1.0f)
 )
 
-// HORIZONTAL: solo ventana grande + teclado, como la captura 4
 fun landscapeZones() = PlayerZones(
     speaker = null,
     screen = null,
@@ -86,11 +85,12 @@ fun Modifier.fillZone(zone: Zone): Modifier = this.then(
 )
 
 @Composable
-fun SkinLayout(viewModel: PlayerViewModel = viewModel()) {
+fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val playState by viewModel.playState.collectAsState()
     val isLidOpen by viewModel.isLidOpen.collectAsState()
     val cassette by viewModel.cassette.collectAsState()
     val calibrationMode by viewModel.calibrationMode.collectAsState()
+    val errorInfo by viewModel.errorInfo.collectAsState()
 
     BoxWithConstraints(
         modifier = Modifier
@@ -122,6 +122,7 @@ fun SkinLayout(viewModel: PlayerViewModel = viewModel()) {
                 isLidOpen = isLidOpen,
                 cassette = cassette,
                 calibrationMode = calibrationMode,
+                errorInfo = errorInfo,
                 onPlayPause = viewModel::togglePlayPause,
                 onStop = viewModel::stop,
                 onEject = viewModel::eject,
