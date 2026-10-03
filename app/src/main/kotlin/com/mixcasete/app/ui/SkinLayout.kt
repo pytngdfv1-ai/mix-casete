@@ -1,5 +1,6 @@
 package com.mixcasete.app.ui
 
+import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -26,11 +27,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mixcasete.app.audio.AudioPlayerViewModel
+import com.mixcasete.app.tv.TvActivity
 import com.mixcasete.app.ui.components.CassettePlayer
 import com.mixcasete.app.ui.screens.LoginContent
 import com.mixcasete.app.ui.screens.PlaylistContent
@@ -103,6 +106,7 @@ fun Modifier.fillZone(zone: Zone): Modifier = this.then(
 
 @Composable
 fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
+    val context = LocalContext.current
     val playState by viewModel.playState.collectAsState()
     val isLidOpen by viewModel.isLidOpen.collectAsState()
     val cassette by viewModel.cassette.collectAsState()
@@ -115,6 +119,7 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentPlaylist by viewModel.currentPlaylist.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.collectAsState()
+    val currentVideoUrl by viewModel.currentVideoUrl.collectAsState()
 
     val isFavorite = currentPlaylist.getOrNull(currentSongIndex)?.isFavorite ?: false
 
@@ -166,6 +171,13 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 onRepeat = viewModel::cycleRepeatMode,
                 onFavorite = {
                     currentPlaylist.getOrNull(currentSongIndex)?.let { viewModel.toggleFavorite(it) }
+                },
+                onShare = {
+                    viewModel.pauseForTv()
+                    context.startActivity(
+                        Intent(context, TvActivity::class.java)
+                            .putExtra("videoUrl", currentVideoUrl)
+                    )
                 }
             )
         }
@@ -198,7 +210,6 @@ private fun OverlayPanel(
     onClose: () -> Unit,
     content: @Composable () -> Unit
 ) {
-    // Fondo oscuro: tocar FUERA del panel lo cierra
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -209,7 +220,6 @@ private fun OverlayPanel(
                 onClick = onClose
             )
     ) {
-        // Panel: tocar DENTRO no cierra
         Box(
             modifier = Modifier
                 .then(
@@ -232,7 +242,6 @@ private fun OverlayPanel(
                     onClick = { }
                 )
         ) {
-            // El contenido baja 40dp para que la X no tape la lupa ni el botón "+"
             Box(Modifier.fillMaxSize().padding(top = 40.dp)) {
                 content()
             }
