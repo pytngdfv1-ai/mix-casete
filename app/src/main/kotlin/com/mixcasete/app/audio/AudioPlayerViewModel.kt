@@ -88,14 +88,16 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         controller?.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
-                    Player.STATE_PLAYING -> {
-                        _playState.value = PlayState.PLAYING
-                        _errorInfo.value = null
-                        retryCount = 0
-                        addLog("Playback started: ${currentSource?.title}")
-                    }
-                    Player.STATE_PAUSED -> {
-                        _playState.value = PlayState.PAUSED
+                    Player.STATE_READY -> {
+                        if (controller?.isPlaying == true) {
+                            _playState.value = PlayState.PLAYING
+                            _errorInfo.value = null
+                            retryCount = 0
+                            addLog("Playback started: ${currentSource?.title}")
+                        } else {
+                            _playState.value = PlayState.PAUSED
+                        }
+                        updateProgress()
                     }
                     Player.STATE_ENDED -> {
                         viewModelScope.launch {
@@ -107,6 +109,15 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                             handlePlaybackError("Playback ended unexpectedly")
                         }
                     }
+                }
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    _playState.value = PlayState.PLAYING
+                    updateProgress()
+                } else if (controller?.playbackState == Player.STATE_READY) {
+                    _playState.value = PlayState.PAUSED
                 }
             }
 
