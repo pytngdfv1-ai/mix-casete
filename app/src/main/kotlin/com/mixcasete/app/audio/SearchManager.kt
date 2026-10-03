@@ -58,23 +58,14 @@ class SearchManager(private val context: Context) {
 
             for (item in items.take(20)) {
                 if (item is StreamInfoItem) {
-                    val thumbnailUrl = try {
-                        val thumbnails = item.thumbnails
-                        if (thumbnails.isNotEmpty()) {
-                            thumbnails[0].url
-                        } else {
-                            null
-                        }
-                    } catch (e: Exception) {
-                        null
-                    }
-                    
+                    // NOTA: En v0.22.7 no todas las propiedades de thumbnail están disponibles
+                    // en StreamInfoItem directamente. Usamos null y el fallback de RemoteImage.
                     results.add(
                         SearchResult(
                             url = item.url,
                             title = item.name,
                             artist = item.uploaderName,
-                            thumbnailUrl = thumbnailUrl
+                            thumbnailUrl = null  // Simplificado: usamos icono de nota musical como fallback
                         )
                     )
                 }
