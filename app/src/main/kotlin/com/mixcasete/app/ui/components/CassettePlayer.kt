@@ -21,8 +21,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mixcasete.app.player.CassetteState
-import com.mixcasete.app.player.PlayState
+import com.mixcasete.app.audio.CassetteState
+import com.mixcasete.app.audio.ErrorInfo
+import com.mixcasete.app.audio.PlayState
 import com.mixcasete.app.ui.PlayerZones
 import com.mixcasete.app.ui.fillZone
 import kotlin.math.PI
@@ -42,6 +43,7 @@ fun CassettePlayer(
     isLidOpen: Boolean,
     cassette: CassetteState,
     calibrationMode: Boolean,
+    errorInfo: ErrorInfo?,
     onPlayPause: () -> Unit,
     onStop: () -> Unit,
     onEject: () -> Unit,
@@ -82,6 +84,20 @@ fun CassettePlayer(
             onRewind = onRewind,
             onFastForward = onFastForward
         )
+
+        errorInfo?.let { info ->
+            Text(
+                text = "ERROR: ${info.message.take(50)}",
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .background(Color.Red.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
+        }
 
         Text(
             text = "CALIB",
@@ -204,6 +220,7 @@ fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
                 PlayState.PAUSED -> "PAUSE ${(progress * 100).toInt()}%"
                 PlayState.STOPPED -> "STOP"
                 PlayState.EJECTED -> "EJECT"
+                PlayState.ERROR -> "ERROR"
             },
             color = Color(0xFF1C2B1C),
             fontSize = 10.sp,
