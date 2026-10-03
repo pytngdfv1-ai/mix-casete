@@ -3,7 +3,6 @@ package com.mixcasete.app.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -22,6 +21,7 @@ import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +30,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,7 +48,8 @@ import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.data.Playlist
 import com.mixcasete.app.data.Song
-import kotlinx.coroutines.flow.flowOf
+
+private var dragActive = false
 
 @Composable
 fun PlaylistContent(viewModel: AudioPlayerViewModel) {
@@ -116,16 +118,20 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                 val songs by viewModel.playlistSongs(playlist.id)
                     .collectAsState(initial = emptyList())
                 var order by remember(playlist.id) { mutableStateOf<List<Song>>(emptyList()) }
-                if (order.map { it.id } != songs.map { it.id } && !dragActive) {
-                    order = songs
+
+                LaunchedEffect(songs) {
+                    if (!dragActive) {
+                        order = songs
+                    }
                 }
+
                 val rowHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { selectedPlaylist = null }) {
+                    IconButton(onClick = { selectedPlaylist = null; dragActive = false }) {
                         Icon(Icons.Filled.ArrowBack, contentDescription = "Volver", tint = Color(0xFFD6D6D6))
                     }
                     Text(
@@ -160,18 +166,23 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                                     .size(28.dp)
                                     .pointerInput(order) {
                                         detectDragGesturesAfterLongPress(
+                                            onDragStart = { dragActive = true },
                                             onDrag = { change, dragAmount ->
                                                 change.consume()
                                                 dragOffset += dragAmount.y
                                                 if (dragOffset > rowHeightPx && index < order.size - 1) {
-                                                    order = order.toMutableList().also {
-                                                        it[index] = it[index + 1].also { v -> it[index + 1] = it[index] }
-                                                    }
+                                                    val newList = order.toMutableList()
+                                                    val tmp = newList[index]
+                                                    newList[index] = newList[index + 1]
+                                                    newList[index + 1] = tmp
+                                                    order = newList
                                                     dragOffset = 0f
                                                 } else if (dragOffset < -rowHeightPx && index > 0) {
-                                                    order = order.toMutableList().also {
-                                                        it[index] = it[index - 1].also { v -> it[index - 1] = it[index] }
-                                                    }
+                                                    val newList = order.toMutableList()
+                                                    val tmp = newList[index]
+                                                    newList[index] = newList[index - 1]
+                                                    newList[index - 1] = tmp
+                                                    order = newList
                                                     dragOffset = 0f
                                                 }
                                             },
@@ -193,11 +204,11 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                             }
                             IconButton(onClick = {
                                 if (index > 0) {
-                                    order = order.toMutableList().also {
-                                        val tmp = it[index - 1]
-                                        it[index - 1] = it[index]
-                                        it[index] = tmp
-                                    }
+                                    val newList = order.toMutableList()
+                                    val tmp = newList[index - 1]
+                                    newList[index - 1] = newList[index]
+                                    newList[index] = tmp
+                                    order = newList
                                     viewModel.savePlaylistOrder(playlist.id, order.map { it.id })
                                 }
                             }) {
@@ -205,11 +216,11 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                             }
                             IconButton(onClick = {
                                 if (index < order.size - 1) {
-                                    order = order.toMutableList().also {
-                                        val tmp = it[index + 1]
-                                        it[index + 1] = it[index]
-                                        it[index] = tmp
-                                    }
+                                    val newList = order.toMutableList()
+                                    val tmp = newList[index + 1]
+                                    newList[index + 1] = newList[index]
+                                    newList[index] = tmp
+                                    order = newList
                                     viewModel.savePlaylistOrder(playlist.id, order.map { it.id })
                                 }
                             }) {
@@ -225,7 +236,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
         }
 
         if (showCreateDialog) {
-            androidx.compose.material3.AlertDialog(
+            AlertDialog(
                 onDismissRequest = { showCreateDialog = false },
                 title = { Text("Nueva lista") },
                 text = {
@@ -252,7 +263,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
         }
 
         if (renameTarget != null) {
-            androidx.compose.material3.AlertDialog(
+            AlertDialog(
                 onDismissRequest = { renameTarget = null },
                 title = { Text("Renombrar lista") },
                 text = {
@@ -278,5 +289,3 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
         }
     }
 }
-
-private var dragActive: Boolean = false
