@@ -73,7 +73,9 @@ dependencies {
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
-    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.22.7")
+    
+    // NewPipe Extractor actualizado (versión más reciente compatible)
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
     
     // Room Database
     implementation(libs.androidx.room.runtime)
