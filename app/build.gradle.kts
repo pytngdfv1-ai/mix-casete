@@ -21,13 +21,36 @@ android {
         }
     }
 
+    signingConfigs {
+        create("releaseConfig") {
+            val ksPath = System.getenv("KEYSTORE_PATH")
+            if (ksPath != null) {
+                storeFile = file(ksPath)
+                storePassword = System.getenv("STORE_PASSWORD")
+                keyAlias = System.getenv("KEY_ALIAS")
+                keyPassword = System.getenv("KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            // Si hay secretos en CI firma con tu keystore; si no, usa la clave debug
+            // para que el release siga siendo instalable mientras configuras secretos.
+            signingConfig = if (System.getenv("KEYSTORE_PATH") != null) {
+                signingConfigs.getByName("releaseConfig")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+        }
+        debug {
+            isMinifyEnabled = false
         }
     }
     
@@ -73,11 +96,7 @@ dependencies {
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
-    
-    // NewPipe Extractor actualizado (versión más reciente compatible)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.2")
-    
-    // Room Database
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
