@@ -77,6 +77,6 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
     
-    // NewPipe Extractor (para YouTube sin proxies)
+    // NewPipe Extractor (desde JitPack)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.22.7")
 }
