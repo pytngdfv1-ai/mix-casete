@@ -8,7 +8,6 @@ import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
 import org.schabi.newpipe.extractor.exceptions.ExtractionException
-import org.schabi.newpipe.extractor.linkhandler.SearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
@@ -107,10 +106,7 @@ class SourceManager(private val context: Context) {
         try {
             val service = ServiceList.YouTube
             val searchHandler = service.searchQHFactory.fromQuery(query)
-            val searchExtractor = service.getSearchExtractor(searchHandler)
-            searchExtractor.fetchPage()
-            
-            val searchInfo = SearchInfo.getInfo(service, searchExtractor)
+            val searchInfo = SearchInfo.getInfo(service, searchHandler)
             val items = searchInfo.relatedItems
             
             if (items.isNotEmpty()) {
