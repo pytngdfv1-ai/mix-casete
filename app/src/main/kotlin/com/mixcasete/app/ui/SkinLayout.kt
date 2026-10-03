@@ -27,23 +27,23 @@ data class Zone(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
 
 data class PlayerZones(
     val speaker: Zone?,
-    val screen: Zone,
-    val knobs: Zone,
+    val screen: Zone?,
+    val knobs: Zone?,
     val window: Zone,
-    val segments: Zone,
+    val segments: Zone?,
     val keyboard: Zone,
-    val sideGrille: Zone,
+    val sideGrille: Zone?,
     val legL: Zone,
     val legR: Zone
 ) {
     fun namedZones(): List<Pair<String, Zone>> = listOfNotNull(
         speaker?.let { "speaker" to it },
-        "screen" to screen,
-        "knobs" to knobs,
+        screen?.let { "screen" to it },
+        knobs?.let { "knobs" to it },
         "window" to window,
-        "segments" to segments,
+        segments?.let { "segments" to it },
         "keyboard" to keyboard,
-        "side" to sideGrille
+        sideGrille?.let { "side" to it }
     )
 }
 
@@ -59,14 +59,15 @@ fun portraitZones() = PlayerZones(
     legR = Zone(0.80f, 0.965f, 0.90f, 1.0f)
 )
 
+// HORIZONTAL: solo ventana grande + teclado, como la captura 4
 fun landscapeZones() = PlayerZones(
     speaker = null,
-    screen = Zone(0.635f, 0.08f, 0.955f, 0.30f),
-    knobs = Zone(0.635f, 0.33f, 0.955f, 0.47f),
-    window = Zone(0.045f, 0.06f, 0.60f, 0.80f),
-    segments = Zone(0.635f, 0.50f, 0.955f, 0.56f),
-    keyboard = Zone(0.10f, 0.845f, 0.90f, 0.975f),
-    sideGrille = Zone(0.895f, 0.60f, 0.965f, 0.72f),
+    screen = null,
+    knobs = null,
+    window = Zone(0.015f, 0.015f, 0.985f, 0.785f),
+    segments = null,
+    keyboard = Zone(0.015f, 0.80f, 0.985f, 0.955f),
+    sideGrille = null,
     legL = Zone(0.06f, 0.965f, 0.14f, 1.0f),
     legR = Zone(0.86f, 0.965f, 0.94f, 1.0f)
 )
