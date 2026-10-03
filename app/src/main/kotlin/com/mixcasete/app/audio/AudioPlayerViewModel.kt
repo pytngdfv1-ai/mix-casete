@@ -75,6 +75,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
     val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
 
+    private val _searchError = MutableStateFlow<String?>(null)
+    val searchError: StateFlow<String?> = _searchError.asStateFlow()
+
+    private val _isSearching = MutableStateFlow(false)
+    val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
+
     private val _currentPlaylist = MutableStateFlow<List<Song>>(emptyList())
     val currentPlaylist: StateFlow<List<Song>> = _currentPlaylist.asStateFlow()
 
@@ -282,9 +288,15 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun search(query: String) {
+        if (query.isBlank()) return
         viewModelScope.launch {
-            val results = searchManager.search(query)
-            _searchResults.value = results
+            _isSearching.value = true
+            _searchError.value = null
+            val outcome = searchManager.search(query)
+            _searchResults.value = outcome.results
+            _searchError.value = outcome.error
+            _isSearching.value = false
+            addLog("Search '${query}' via ${outcome.source}: ${outcome.results.size} resultados")
         }
     }
 
@@ -467,7 +479,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 )
                 .build()
 
-            controller?.setMediaItem(mediaItem)
+        controller?.setMediaItem(mediaItem)
             controller?.prepare()
             controller?.play()
         } else {
