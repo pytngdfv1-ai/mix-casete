@@ -13,9 +13,9 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Eject
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.FiberManualRecord
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
@@ -39,7 +39,7 @@ fun Keyboard(
     playState: PlayState,
     onPlayPause: () -> Unit,
     onStop: () -> Unit,
-    onEject: () -> Unit,
+    onRecord: () -> Unit,
     onRewind: () -> Unit,
     onFastForward: () -> Unit
 ) {
@@ -52,7 +52,7 @@ fun Keyboard(
         KeyButton(icon = Icons.Filled.PlayArrow, label = "PLAY", onClick = onPlayPause, modifier = Modifier.weight(1f))
         KeyButton(icon = Icons.Filled.Pause, label = "PAUSE", onClick = onPlayPause, modifier = Modifier.weight(1f))
         KeyButton(icon = Icons.Filled.Stop, label = "STOP", onClick = onStop, modifier = Modifier.weight(1f))
-        KeyButton(icon = Icons.Filled.Eject, label = "EJECT", onClick = onEject, modifier = Modifier.weight(1f))
+        KeyButton(icon = Icons.Filled.FiberManualRecord, label = "REC", onClick = onRecord, tint = Color(0xFFE53935), modifier = Modifier.weight(1f))
         KeyButton(icon = Icons.Filled.FastForward, label = "FF", onClick = onFastForward, modifier = Modifier.weight(1f))
     }
 }
@@ -62,7 +62,8 @@ fun KeyButton(
     icon: ImageVector,
     label: String,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    tint: Color = Color(0xFFD6D6D6)
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
@@ -81,7 +82,7 @@ fun KeyButton(
             Icon(
                 imageVector = icon,
                 contentDescription = label,
-                tint = Color(0xFFD6D6D6),
+                tint = tint,
                 modifier = Modifier.fillMaxHeight(0.45f)
             )
             Text(label, fontSize = 7.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD6D6D6))
