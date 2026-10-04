@@ -97,6 +97,7 @@ fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) 
                 tapeFraction = cassette.progress
             )
 
+            // Etiqueta: título + artista + etiqueta de fuente
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.88f)
@@ -109,6 +110,20 @@ fun Cassette(modifier: Modifier, cassette: CassetteState, playState: PlayState) 
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(cassette.title, color = Color(0xFFF2F2F2), fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                     Text(cassette.artist, color = Color(0xFFBDBDBD), fontSize = 9.sp, maxLines = 1)
+                    if (cassette.sourceLabel.isNotEmpty()) {
+                        val labelColor = if (cassette.sourceLabel.startsWith("YouTube")) {
+                            Color(0xFF81C784)  // Verde = canción completa
+                        } else {
+                            Color(0xFFE57373)  // Rojo = preview 30s
+                        }
+                        Text(
+                            text = "● ${cassette.sourceLabel}",
+                            color = labelColor,
+                            fontSize = 8.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
         }
