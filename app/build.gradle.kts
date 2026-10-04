@@ -19,6 +19,10 @@ android {
         vectorDrawables {
             useSupportLibrary = true
         }
+
+        // Inyecta la clave de YouTube Data API si existe en el entorno
+        val ytKey = System.getenv("YOUTUBE_API_KEY") ?: ""
+        buildConfigField("String", "YOUTUBE_API_KEY", "\"$ytKey\"")
     }
 
     signingConfigs {
@@ -63,6 +67,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     composeOptions {
@@ -95,8 +100,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
 
-    // Extractor en su rama master: incluye los parches mas recientes contra
-    // los cambios de API de YouTube (corrige el HTTP 400 de youtubei/v1)
+    // NewPipe Extractor (se mantiene por si Piped falla, como ultimo recurso)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:master-SNAPSHOT")
 
     implementation(libs.androidx.room.runtime)
