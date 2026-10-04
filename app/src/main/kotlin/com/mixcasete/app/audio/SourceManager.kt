@@ -7,11 +7,12 @@ import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
-import org.schabi.newpipe.extractor.exceptions.ExtractionException
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.stream.StreamInfo
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
+import java.net.HttpURLConnection
+import java.net.URL
 
 data class AudioSource(
     val url: String,
@@ -21,26 +22,34 @@ data class AudioSource(
 )
 
 enum class SourceType {
-    YOUTUBE, LOCAL, PREVIEW
+    YOUTUBE, LOCAL
 }
 
 class SourceManager(private val context: Context) {
-    
+
+    companion object {
+        private const val USER_AGENT =
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    }
+
     init {
         try {
             NewPipe.init(object : Downloader() {
                 override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
-                    val connection = java.net.URL(request.url()).openConnection() as java.net.HttpURLConnection
+                    val connection = URL(request.url()).openConnection() as HttpURLConnection
                     connection.requestMethod = request.httpMethod()
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 15000
+                    connection.setRequestProperty("User-Agent", USER_AGENT)
+                    connection.setRequestProperty("Accept-Language", "en-US,en;q=0.9")
                     request.headers().forEach { (key, values) ->
                         values.forEach { value -> connection.setRequestProperty(key, value) }
                     }
                     val responseCode = connection.responseCode
-                    val responseBody = try {
-                        connection.inputStream.bufferedReader().readText()
-                    } catch (e: Exception) {
-                        ""
+                    if (responseCode !in 200..299) {
+                        throw IOException("HTTP $responseCode for ${request.url()}")
                     }
+                    val responseBody = connection.inputStream.bufferedReader().readText()
                     val responseHeaders = connection.headerFields.mapValues { it.value }
                     return org.schabi.newpipe.extractor.downloader.Response(
                         responseCode,
@@ -56,115 +65,60 @@ class SourceManager(private val context: Context) {
         }
     }
 
+    // SOLO YouTube (+ archivo local opcional). Sin iTunes.
     suspend fun getNextSource(
         currentSource: AudioSource?,
         localUri: Uri?,
         searchQuery: String = "lofi hip hop"
     ): AudioSource? = withContext(Dispatchers.IO) {
         val sources = mutableListOf<AudioSource>()
-        
+
         try {
-            val youtubeSource = getYouTubeSource(searchQuery)
-            if (youtubeSource != null) {
-                sources.add(youtubeSource)
+            val service = ServiceList.YouTube
+            val searchHandler = service.searchQHFactory.fromQuery(searchQuery)
+            val searchInfo = SearchInfo.getInfo(service, searchHandler)
+            for (item in searchInfo.relatedItems.take(5)) {
+                if (item is StreamInfoItem) {
+                    try {
+                        val extractor = service.getStreamExtractor(item.url)
+                        extractor.fetchPage()
+                        val streamInfo = StreamInfo.getInfo(extractor)
+                        val bestAudio = streamInfo.audioStreams.maxByOrNull { it.bitrate }
+                        if (bestAudio != null && bestAudio.content.isNotEmpty()) {
+                            sources.add(
+                                AudioSource(
+                                    url = bestAudio.content,
+                                    type = SourceType.YOUTUBE,
+                                    title = streamInfo.name,
+                                    artist = streamInfo.uploaderName
+                                )
+                            )
+                        }
+                    } catch (e: Exception) {
+                    }
+                }
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        
+
         if (localUri != null) {
             sources.add(
                 AudioSource(
                     url = localUri.toString(),
                     type = SourceType.LOCAL,
-                    title = "Local File",
-                    artist = "Unknown"
+                    title = "Archivo local",
+                    artist = "Desconocido"
                 )
             )
         }
-        
-        try {
-            val previewSource = getPreviewSource(searchQuery)
-            if (previewSource != null) {
-                sources.add(previewSource)
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        
+
         if (currentSource != null) {
-            val currentIndex = sources.indexOfFirst { it.url == currentSource.url }
-            if (currentIndex >= 0 && currentIndex < sources.size - 1) {
-                return@withContext sources[currentIndex + 1]
+            val idx = sources.indexOfFirst { it.url == currentSource.url }
+            if (idx >= 0 && idx < sources.size - 1) {
+                return@withContext sources[idx + 1]
             }
         }
-        
-        return@withContext sources.firstOrNull()
-    }
-
-    private suspend fun getYouTubeSource(query: String): AudioSource? = withContext(Dispatchers.IO) {
-        try {
-            val service = ServiceList.YouTube
-            val searchHandler = service.searchQHFactory.fromQuery(query)
-            val searchInfo = SearchInfo.getInfo(service, searchHandler)
-            val items = searchInfo.relatedItems
-            
-            if (items.isNotEmpty()) {
-                val firstItem = items[0]
-                if (firstItem is StreamInfoItem) {
-                    val streamUrl = firstItem.url
-                    val streamExtractor = service.getStreamExtractor(streamUrl)
-                    streamExtractor.fetchPage()
-                    
-                    val streamInfo = StreamInfo.getInfo(streamExtractor)
-                    val audioStreams = streamInfo.audioStreams
-                    
-                    if (audioStreams.isNotEmpty()) {
-                        val bestAudio = audioStreams.maxByOrNull { it.bitrate }
-                        if (bestAudio != null) {
-                            return@withContext AudioSource(
-                                url = bestAudio.content,
-                                type = SourceType.YOUTUBE,
-                                title = streamInfo.name,
-                                artist = streamInfo.uploaderName
-                            )
-                        }
-                    }
-                }
-            }
-        } catch (e: ExtractionException) {
-            e.printStackTrace()
-        } catch (e: IOException) {
-            e.printStackTrace()
-        }
-        return@withContext null
-    }
-
-    private suspend fun getPreviewSource(query: String): AudioSource? = withContext(Dispatchers.IO) {
-        try {
-            val searchUrl = "https://itunes.apple.com/search?term=${query.replace(" ", "+")}&media=music&limit=1"
-            val connection = java.net.URL(searchUrl).openConnection() as java.net.HttpURLConnection
-            connection.requestMethod = "GET"
-            
-            val response = connection.inputStream.bufferedReader().readText()
-            val json = org.json.JSONObject(response)
-            val results = json.getJSONArray("results")
-            
-            if (results.length() > 0) {
-                val track = results.getJSONObject(0)
-                val previewUrl = track.optString("previewUrl", "")
-                if (previewUrl.isNotEmpty()) {
-                    return@withContext AudioSource(
-                        url = previewUrl,
-                        type = SourceType.PREVIEW,
-                        title = track.getString("trackName"),
-                        artist = track.getString("artistName")
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
-        return@withContext null
+        sources.firstOrNull()
     }
 }
