@@ -46,6 +46,11 @@ data class ErrorInfo(
 )
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
+
+    companion object {
+        const val REC_PLAYLIST = "Grabaciones"
+    }
+
     private val sourceManager = SourceManager(application)
     private val searchManager = SearchManager(application)
     private val database = AppDatabase.getDatabase(application)
@@ -69,6 +74,9 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _errorInfo = MutableStateFlow<ErrorInfo?>(null)
     val errorInfo: StateFlow<ErrorInfo?> = _errorInfo.asStateFlow()
+
+    private val _recMessage = MutableStateFlow<String?>(null)
+    val recMessage: StateFlow<String?> = _recMessage.asStateFlow()
 
     private val _debugLog = MutableStateFlow<List<String>>(emptyList())
     val debugLog: StateFlow<List<String>> = _debugLog.asStateFlow()
@@ -159,9 +167,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         }
                         updateProgress()
                     }
-                    Player.STATE_ENDED -> {
-                        handleSongEnded()
-                    }
+                    Player.STATE_ENDED -> handleSongEnded()
                     Player.STATE_IDLE -> {
                         if (_playState.value != PlayState.STOPPED) {
                             handlePlaybackError("Playback ended unexpectedly")
@@ -215,19 +221,15 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun handlePlaybackError(message: String) {
         addLog("ERROR: $message (Source: ${currentSource?.type})")
         _errorInfo.value = ErrorInfo(message, currentSource?.type)
-
         if (retryCount < maxRetries) {
             retryCount++
             viewModelScope.launch {
-                val backoffDelay = (retryCount * 2000).toLong()
-                delay(backoffDelay)
+                delay((retryCount * 2000).toLong())
                 loadNextSource()
             }
         } else {
             _playState.value = PlayState.ERROR
-            viewModelScope.launch {
-                loadNextSource()
-            }
+            viewModelScope.launch { loadNextSource() }
         }
     }
 
@@ -239,15 +241,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun togglePlayPause() {
         if (_isLidOpen.value) return
         val player = controller ?: return
-
         if (player.isPlaying) {
             player.pause()
             _playState.value = PlayState.PAUSED
         } else {
             if (player.playbackState == Player.STATE_IDLE || currentSource == null) {
-                viewModelScope.launch {
-                    loadNextSource()
-                }
+                viewModelScope.launch { loadNextSource() }
             } else {
                 player.play()
                 _playState.value = PlayState.PLAYING
@@ -268,23 +267,37 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         currentSource = null
     }
 
-    fun eject() {
-        stop()
-        _isLidOpen.value = !_isLidOpen.value
+    // REC: agrega el track actual a la lista "Grabaciones" (persistente)
+    fun recordCurrentTrack() {
+        viewModelScope.launch {
+            val song = _currentPlaylist.value.getOrNull(_currentSongIndex.value)
+            if (song == null) {
+                _recMessage.value = "Nada sonando para grabar"
+                delay(2000)
+                _recMessage.value = null
+                return@launch
+            }
+            val existing = allPlaylists.value.firstOrNull { it.name == REC_PLAYLIST }
+            val playlistId = existing?.id
+                ?: playlistDao.insertPlaylist(Playlist(name = REC_PLAYLIST))
+            addSongToPlaylist(playlistId, song)
+            _recMessage.value = "● Grabado en '$REC_PLAYLIST'"
+            addLog("REC: ${song.title} -> $REC_PLAYLIST")
+            delay(2000)
+            _recMessage.value = null
+        }
     }
 
     fun rewind() {
         val player = controller ?: return
-        val newPosition = (player.currentPosition - 10000).coerceAtLeast(0)
-        player.seekTo(newPosition)
+        player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
     }
 
     fun fastForward() {
         val player = controller ?: return
         val duration = player.duration
         if (duration > 0) {
-            val newPosition = (player.currentPosition + 10000).coerceAtMost(duration)
-            player.seekTo(newPosition)
+            player.seekTo((player.currentPosition + 10000).coerceAtMost(duration))
         }
     }
 
@@ -360,7 +373,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun playSongAt(index: Int) {
         if (index < 0 || index >= _currentPlaylist.value.size) return
-
         val song = _currentPlaylist.value[index]
         _currentSongIndex.value = index
         _currentVideoUrl.value = song.videoUrl
@@ -375,7 +387,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             artist = song.artist,
             progress = 0f
         )
-
         val mediaItem = MediaItem.Builder()
             .setUri(song.url)
             .setMediaMetadata(
@@ -385,15 +396,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     .build()
             )
             .build()
-
         controller?.setMediaItem(mediaItem)
         controller?.prepare()
         controller?.play()
     }
 
-    fun toggleShuffle() {
-        _isShuffleEnabled.value = !_isShuffleEnabled.value
-    }
+    fun toggleShuffle() { _isShuffleEnabled.value = !_isShuffleEnabled.value }
 
     fun cycleRepeatMode() {
         _repeatMode.value = when (_repeatMode.value) {
@@ -404,25 +412,17 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun toggleFavorite(song: Song) {
-        viewModelScope.launch {
-            songDao.updateFavorite(song.id, !song.isFavorite)
-        }
+        viewModelScope.launch { songDao.updateFavorite(song.id, !song.isFavorite) }
     }
 
-    fun playlistSongs(playlistId: Long): Flow<List<Song>> {
-        return playlistDao.getSongsInPlaylist(playlistId)
-    }
+    fun playlistSongs(playlistId: Long): Flow<List<Song>> = playlistDao.getSongsInPlaylist(playlistId)
 
     fun createPlaylist(name: String) {
-        viewModelScope.launch {
-            playlistDao.insertPlaylist(Playlist(name = name))
-        }
+        viewModelScope.launch { playlistDao.insertPlaylist(Playlist(name = name)) }
     }
 
     fun renamePlaylist(playlist: Playlist, newName: String) {
-        viewModelScope.launch {
-            playlistDao.updatePlaylist(playlist.copy(name = newName))
-        }
+        viewModelScope.launch { playlistDao.updatePlaylist(playlist.copy(name = newName)) }
     }
 
     fun deletePlaylist(playlist: Playlist) {
@@ -437,19 +437,13 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val songId = if (song.id == 0L) songDao.insertSong(song) else song.id
             val position = playlistDao.countSongs(playlistId)
             playlistDao.insertPlaylistSongCrossRef(
-                PlaylistSongCrossRef(
-                    playlistId = playlistId,
-                    songId = songId,
-                    position = position
-                )
+                PlaylistSongCrossRef(playlistId = playlistId, songId = songId, position = position)
             )
         }
     }
 
     fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
-        viewModelScope.launch {
-            playlistDao.removeSongFromPlaylist(playlistId, songId)
-        }
+        viewModelScope.launch { playlistDao.removeSongFromPlaylist(playlistId, songId) }
     }
 
     fun savePlaylistOrder(playlistId: Long, songIds: List<Long>) {
@@ -460,21 +454,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun toggleSearchScreen() {
-        _showSearchScreen.value = !_showSearchScreen.value
-    }
-
-    fun togglePlaylistScreen() {
-        _showPlaylistScreen.value = !_showPlaylistScreen.value
-    }
-
-    fun toggleLoginScreen() {
-        _showLoginScreen.value = !_showLoginScreen.value
-    }
+    fun toggleSearchScreen() { _showSearchScreen.value = !_showSearchScreen.value }
+    fun togglePlaylistScreen() { _showPlaylistScreen.value = !_showPlaylistScreen.value }
+    fun toggleLoginScreen() { _showLoginScreen.value = !_showLoginScreen.value }
 
     private suspend fun loadNextSource() {
         val nextSource = sourceManager.getNextSource(currentSource, localUri)
-
         if (nextSource != null) {
             currentSource = nextSource
             _cassette.value = _cassette.value.copy(
@@ -482,7 +467,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 artist = nextSource.artist,
                 progress = 0f
             )
-
             val mediaItem = MediaItem.Builder()
                 .setUri(nextSource.url)
                 .setMediaMetadata(
@@ -492,7 +476,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         .build()
                 )
                 .build()
-
             controller?.setMediaItem(mediaItem)
             controller?.prepare()
             controller?.play()
@@ -515,9 +498,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     override fun onCleared() {
-        controllerFuture?.let {
-            MediaController.releaseFuture(it)
-        }
+        controllerFuture?.let { MediaController.releaseFuture(it) }
         super.onCleared()
     }
 }
