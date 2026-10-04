@@ -1,10 +1,11 @@
 # No optimizar agresivamente para evitar crashes en release
 -dontoptimize
 
-# NewPipe Extractor
+# NewPipe Extractor y Rhino (motor JavaScript)
 -keep class org.schabi.newpipe.extractor.** { *; }
 -dontwarn org.schabi.newpipe.extractor.**
--keep class org.schabi.newpipe.extractor.downloader.** { *; }
+-dontwarn org.mozilla.javascript.**
+-dontwarn java.beans.**
 
 # Media3 / ExoPlayer
 -keep class androidx.media3.** { *; }
@@ -22,6 +23,8 @@
 # Modelos propios
 -keep class com.mixcasete.app.audio.** { *; }
 -keep class com.mixcasete.app.tv.** { *; }
+-keep class com.mixcasete.app.ui.** { *; }
+-keep class com.mixcasete.app.player.** { *; }
 
 # OkHttp / Okio (usado por datasource)
 -dontwarn okhttp3.**
@@ -34,3 +37,7 @@
 -keepclassmembers class * {
     @android.webkit.JavascriptInterface <methods>;
 }
+
+# Mantener datos de la app
+-keep class com.mixcasete.app.MainActivity { *; }
+-keep class com.mixcasete.app.tv.TvActivity { *; }
