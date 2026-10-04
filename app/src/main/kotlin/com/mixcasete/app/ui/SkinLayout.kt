@@ -112,6 +112,7 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val cassette by viewModel.cassette.collectAsState()
     val calibrationMode by viewModel.calibrationMode.collectAsState()
     val errorInfo by viewModel.errorInfo.collectAsState()
+    val recMessage by viewModel.recMessage.collectAsState()
     val showSearch by viewModel.showSearchScreen.collectAsState()
     val showPlaylist by viewModel.showPlaylistScreen.collectAsState()
     val showLogin by viewModel.showLoginScreen.collectAsState()
@@ -124,9 +125,7 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val isFavorite = currentPlaylist.getOrNull(currentSongIndex)?.isFavorite ?: false
 
     BoxWithConstraints(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF121212)),
+        modifier = Modifier.fillMaxSize().background(Color(0xFF121212)),
         contentAlignment = Alignment.Center
     ) {
         val isPortrait = maxHeight > maxWidth
@@ -154,12 +153,13 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 cassette = cassette,
                 calibrationMode = calibrationMode,
                 errorInfo = errorInfo,
+                recMessage = recMessage,
                 isShuffle = isShuffle,
                 repeatMode = repeatMode,
                 isFavorite = isFavorite,
                 onPlayPause = viewModel::togglePlayPause,
                 onStop = viewModel::stop,
-                onEject = viewModel::eject,
+                onRecord = viewModel::recordCurrentTrack,
                 onRewind = viewModel::rewind,
                 onFastForward = viewModel::fastForward,
                 onToggleCalibration = viewModel::toggleCalibration,
@@ -175,25 +175,18 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 onShare = {
                     viewModel.pauseForTv()
                     context.startActivity(
-                        Intent(context, TvActivity::class.java)
-                            .putExtra("videoUrl", currentVideoUrl)
+                        Intent(context, TvActivity::class.java).putExtra("videoUrl", currentVideoUrl)
                     )
                 }
             )
         }
 
         if (showSearch) {
-            OverlayPanel(
-                isPortrait = isPortrait,
-                onClose = viewModel::toggleSearchScreen
-            ) {
+            OverlayPanel(isPortrait = isPortrait, onClose = viewModel::toggleSearchScreen) {
                 SearchContent(viewModel)
             }
         } else if (showPlaylist) {
-            OverlayPanel(
-                isPortrait = isPortrait,
-                onClose = viewModel::togglePlaylistScreen
-            ) {
+            OverlayPanel(isPortrait = isPortrait, onClose = viewModel::togglePlaylistScreen) {
                 PlaylistContent(viewModel)
             }
         }
@@ -224,15 +217,9 @@ private fun OverlayPanel(
             modifier = Modifier
                 .then(
                     if (isPortrait) {
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .fillMaxHeight(0.65f)
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().fillMaxHeight(0.65f)
                     } else {
-                        Modifier
-                            .align(Alignment.CenterEnd)
-                            .fillMaxHeight()
-                            .fillMaxWidth(0.45f)
+                        Modifier.align(Alignment.CenterEnd).fillMaxHeight().fillMaxWidth(0.45f)
                     }
                 )
                 .background(Color(0xFF1C1C1C))
@@ -245,22 +232,11 @@ private fun OverlayPanel(
             Box(Modifier.fillMaxSize().padding(top = 40.dp)) {
                 content()
             }
-
             IconButton(
                 onClick = onClose,
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(30.dp)
-                    .clip(CircleShape)
-                    .background(Color(0xFF3A3A3A))
+                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(30.dp).clip(CircleShape).background(Color(0xFF3A3A3A))
             ) {
-                Icon(
-                    Icons.Filled.Close,
-                    contentDescription = "Cerrar",
-                    tint = Color(0xFFD6D6D6),
-                    modifier = Modifier.size(16.dp)
-                )
+                Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color(0xFFD6D6D6), modifier = Modifier.size(16.dp))
             }
         }
     }
