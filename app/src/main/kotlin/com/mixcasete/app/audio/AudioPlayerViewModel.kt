@@ -128,8 +128,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private var currentSource: AudioSource? = null
     private var localUri: Uri? = null
-    private var retryCount = 0
-    private val maxRetries = 3
 
     init {
         initMediaController()
@@ -161,7 +159,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                         if (controller?.isPlaying == true) {
                             _playState.value = PlayState.PLAYING
                             _errorInfo.value = null
-                            retryCount = 0
                         } else {
                             _playState.value = PlayState.PAUSED
                         }
@@ -170,7 +167,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     Player.STATE_ENDED -> handleSongEnded()
                     Player.STATE_IDLE -> {
                         if (_playState.value != PlayState.STOPPED) {
-                            handlePlaybackError("Playback ended unexpectedly")
+                            _playState.value = PlayState.STOPPED
                         }
                     }
                 }
@@ -186,7 +183,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
-                handlePlaybackError(error.message ?: "Unknown error")
+                addLog("ERROR: ${error.message}")
+                _errorInfo.value = ErrorInfo(error.message ?: "Error de reproduccion", currentSource?.type)
             }
         })
     }
@@ -215,21 +213,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     _playState.value = PlayState.STOPPED
                 }
             }
-        }
-    }
-
-    private fun handlePlaybackError(message: String) {
-        addLog("ERROR: $message (Source: ${currentSource?.type})")
-        _errorInfo.value = ErrorInfo(message, currentSource?.type)
-        if (retryCount < maxRetries) {
-            retryCount++
-            viewModelScope.launch {
-                delay((retryCount * 2000).toLong())
-                loadNextSource()
-            }
-        } else {
-            _playState.value = PlayState.ERROR
-            viewModelScope.launch { loadNextSource() }
         }
     }
 
@@ -267,7 +250,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         currentSource = null
     }
 
-    // REC: agrega el track actual a la lista "Grabaciones" (persistente)
     fun recordCurrentTrack() {
         viewModelScope.launch {
             val song = _currentPlaylist.value.getOrNull(_currentSongIndex.value)
@@ -318,25 +300,31 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _searchResults.value = outcome.results
             _searchError.value = outcome.error
             _isSearching.value = false
-            addLog("Search '${query}' via ${outcome.source}: ${outcome.results.size} resultados")
+            addLog("Search '${query}': ${outcome.results.size} resultados (${outcome.source})")
         }
     }
 
     fun playSearchResult(result: SearchResult) {
         viewModelScope.launch {
+            val audioUrl = PipedResolver.resolveAudioUrl(result.videoId)
+            if (audioUrl == null) {
+                _errorInfo.value = ErrorInfo("No se pudo obtener el audio de YouTube (todas las instancias Piped fallaron)", SourceType.YOUTUBE)
+                _showSearchScreen.value = false
+                return@launch
+            }
+
             val song = Song(
-                url = result.url,
+                url = audioUrl,
                 title = result.title,
                 artist = result.artist,
-                thumbnailUrl = result.thumbnailUrl
+                thumbnailUrl = result.thumbnailUrl,
+                videoUrl = "https://www.youtube.com/watch?v=${result.videoId}"
             )
-            song.videoUrl = result.videoUrl
             val songId = songDao.insertSong(song)
             val savedSong = song.copy(id = songId)
-            savedSong.videoUrl = result.videoUrl
             _currentPlaylist.value = listOf(savedSong)
             _currentSongIndex.value = 0
-            _currentVideoUrl.value = result.videoUrl
+            _currentVideoUrl.value = savedSong.videoUrl
             _cassette.value = _cassette.value.copy(sourceLabel = result.sourceLabel)
             playSongAt(0)
             _showSearchScreen.value = false
@@ -373,32 +361,67 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun playSongAt(index: Int) {
         if (index < 0 || index >= _currentPlaylist.value.size) return
-        val song = _currentPlaylist.value[index]
-        _currentSongIndex.value = index
-        _currentVideoUrl.value = song.videoUrl
-        currentSource = AudioSource(
-            url = song.url,
-            type = SourceType.YOUTUBE,
-            title = song.title,
-            artist = song.artist
-        )
-        _cassette.value = _cassette.value.copy(
-            title = song.title,
-            artist = song.artist,
-            progress = 0f
-        )
-        val mediaItem = MediaItem.Builder()
-            .setUri(song.url)
-            .setMediaMetadata(
-                MediaMetadata.Builder()
-                    .setTitle(song.title)
-                    .setArtist(song.artist)
-                    .build()
+        viewModelScope.launch {
+            val song = _currentPlaylist.value[index]
+            _currentSongIndex.value = index
+
+            // Si es de YouTube (tiene videoUrl), re-resolver la URL de audio
+            // porque las URLs de Piped son temporales
+            var playUrl = song.url
+            val videoId = extractVideoId(song.videoUrl)
+            if (videoId != null) {
+                val resolved = PipedResolver.resolveAudioUrl(videoId)
+                if (resolved != null) {
+                    playUrl = resolved
+                    // Actualizar el Song en memoria con la URL nueva
+                    val updated = song.copy(url = resolved)
+                    val newList = _currentPlaylist.value.toMutableList()
+                    newList[index] = updated
+                    _currentPlaylist.value = newList
+                } else {
+                    _errorInfo.value = ErrorInfo("No se pudo resolver audio para '${song.title}'", SourceType.YOUTUBE)
+                    return@launch
+                }
+            }
+
+            _currentVideoUrl.value = song.videoUrl
+            currentSource = AudioSource(
+                url = playUrl,
+                type = SourceType.YOUTUBE,
+                title = song.title,
+                artist = song.artist
             )
-            .build()
-        controller?.setMediaItem(mediaItem)
-        controller?.prepare()
-        controller?.play()
+            _cassette.value = _cassette.value.copy(
+                title = song.title,
+                artist = song.artist,
+                progress = 0f
+            )
+
+            val mediaItem = MediaItem.Builder()
+                .setUri(playUrl)
+                .setMediaMetadata(
+                    MediaMetadata.Builder()
+                        .setTitle(song.title)
+                        .setArtist(song.artist)
+                        .build()
+                )
+                .build()
+
+            controller?.setMediaItem(mediaItem)
+            controller?.prepare()
+            controller?.play()
+        }
+    }
+
+    private fun extractVideoId(url: String?): String? {
+        if (url == null) return null
+        return try {
+            when {
+                url.contains("watch?v=") -> url.substringAfter("watch?v=").substringBefore("&")
+                url.contains("youtu.be/") -> url.substringAfter("youtu.be/").substringBefore("?")
+                else -> null
+            }
+        } catch (e: Exception) { null }
     }
 
     fun toggleShuffle() { _isShuffleEnabled.value = !_isShuffleEnabled.value }
