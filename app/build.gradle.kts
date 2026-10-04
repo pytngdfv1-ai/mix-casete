@@ -20,7 +20,7 @@ android {
             useSupportLibrary = true
         }
 
-        // Inyecta la clave de YouTube Data API si existe en el entorno
+        // Inyecta la clave de YouTube Data API desde el entorno de CI
         val ytKey = System.getenv("YOUTUBE_API_KEY") ?: ""
         buildConfigField("String", "YOUTUBE_API_KEY", "\"$ytKey\"")
     }
@@ -99,10 +99,7 @@ dependencies {
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.coroutines.core)
-
-    // NewPipe Extractor (se mantiene por si Piped falla, como ultimo recurso)
     implementation("com.github.TeamNewPipe:NewPipeExtractor:master-SNAPSHOT")
-
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
     ksp(libs.androidx.room.compiler)
