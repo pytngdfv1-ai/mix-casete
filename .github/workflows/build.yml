@@ -38,12 +38,14 @@ jobs:
         if [ -n "$KEYSTORE_BASE64" ]; then
           echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/keystore.jks"
           echo "KEYSTORE_PATH=$RUNNER_TEMP/keystore.jks" >> "$GITHUB_ENV"
-          echo "Keystore decodificado: el release se firmara con tu clave"
+          echo "Keystore decodificado"
         else
-          echo "Sin KEYSTORE_BASE64: el release se firmara con clave debug"
+          echo "Sin KEYSTORE_BASE64"
         fi
 
     - name: Build Debug
+      env:
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       run: ./gradlew assembleDebug
 
     - name: Build Release
@@ -51,6 +53,7 @@ jobs:
         KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
         KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+        YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       run: ./gradlew assembleRelease
 
     - name: Upload Debug APK
