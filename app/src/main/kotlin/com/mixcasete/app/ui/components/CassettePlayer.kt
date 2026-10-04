@@ -62,12 +62,13 @@ fun CassettePlayer(
     cassette: CassetteState,
     calibrationMode: Boolean,
     errorInfo: ErrorInfo?,
+    recMessage: String?,
     isShuffle: Boolean,
     repeatMode: RepeatMode,
     isFavorite: Boolean,
     onPlayPause: () -> Unit,
     onStop: () -> Unit,
-    onEject: () -> Unit,
+    onRecord: () -> Unit,
     onRewind: () -> Unit,
     onFastForward: () -> Unit,
     onToggleCalibration: () -> Unit,
@@ -86,11 +87,7 @@ fun CassettePlayer(
         }
 
         zones.screen?.let {
-            LcdScreen(
-                modifier = Modifier.fillZone(it),
-                playState = playState,
-                progress = cassette.progress
-            )
+            LcdScreen(modifier = Modifier.fillZone(it), playState = playState, progress = cassette.progress)
         }
 
         zones.knobs?.let {
@@ -123,19 +120,30 @@ fun CassettePlayer(
             playState = playState,
             onPlayPause = onPlayPause,
             onStop = onStop,
-            onEject = onEject,
+            onRecord = onRecord,
             onRewind = onRewind,
             onFastForward = onFastForward
         )
 
         IconButton(
             onClick = onShare,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(4.dp)
-                .size(36.dp)
+            modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(36.dp)
         ) {
             Icon(Icons.Filled.Cast, contentDescription = "Compartir con TV", tint = ActiveGreen)
+        }
+
+        recMessage?.let { msg ->
+            Text(
+                text = msg,
+                color = Color.White,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(8.dp)
+                    .background(Color(0xFFB71C1C).copy(alpha = 0.85f), RoundedCornerShape(4.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
         }
 
         errorInfo?.let { info ->
@@ -207,11 +215,7 @@ fun FunctionBar(
             Icon(Icons.Filled.SkipNext, contentDescription = "Siguiente", tint = TrimSilver)
         }
         IconButton(onClick = onShuffle, modifier = Modifier.weight(1f)) {
-            Icon(
-                Icons.Filled.Shuffle,
-                contentDescription = "Aleatorio",
-                tint = if (isShuffle) ActiveGreen else Color(0xFF777777)
-            )
+            Icon(Icons.Filled.Shuffle, contentDescription = "Aleatorio", tint = if (isShuffle) ActiveGreen else Color(0xFF777777))
         }
         IconButton(onClick = onRepeat, modifier = Modifier.weight(1f)) {
             Icon(
@@ -244,10 +248,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
     drawRoundRect(color = line, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f), style = Stroke(width = w * 0.012f))
 
     zones.speaker?.let { sp ->
-        val sx = sp.x0 * w
-        val sy = sp.y0 * h
-        val sw = sp.w * w
-        val sh = sp.h * h
+        val sx = sp.x0 * w; val sy = sp.y0 * h; val sw = sp.w * w; val sh = sp.h * h
         drawRoundRect(color = PanelDark, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f))
         drawRoundRect(color = line, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f), style = Stroke(width = w * 0.008f))
         val step = sw / 24f
@@ -258,8 +259,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
         while (yy < sy + sh - step * 0.5f) {
             var xx = sx + step
             while (xx < sx + sw - step * 0.5f) {
-                val dx = xx - cx
-                val dy = yy - cy
+                val dx = xx - cx; val dy = yy - cy
                 if (dx * dx + dy * dy < clusterR * clusterR) {
                     drawCircle(color = line, radius = step * 0.32f, center = Offset(xx, yy))
                 } else {
@@ -272,10 +272,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
     }
 
     zones.sideGrille?.let { g ->
-        val gx = g.x0 * w
-        val gy = g.y0 * h
-        val gw = g.w * w
-        val gh = g.h * h
+        val gx = g.x0 * w; val gy = g.y0 * h; val gw = g.w * w; val gh = g.h * h
         for (i in 0 until 4) {
             drawRect(color = DetailDark, topLeft = Offset(gx, gy + gh * i / 4f + gh * 0.1f), size = Size(gw, gh * 0.12f))
         }
@@ -283,10 +280,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
 
     run {
         val wz = zones.window
-        val wx = wz.x0 * w
-        val wy = wz.y0 * h
-        val ww = wz.w * w
-        val wh = wz.h * h
+        val wx = wz.x0 * w; val wy = wz.y0 * h; val ww = wz.w * w; val wh = wz.h * h
         val bev = w * 0.018f
         drawRoundRect(color = Color(0xFF3A3A3A), topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2))
         drawRoundRect(color = line, topLeft = Offset(wx - bev, wy - bev), size = Size(ww + bev * 2, wh + bev * 2), cornerRadius = CornerRadius(bev * 2), style = Stroke(width = w * 0.008f))
@@ -302,8 +296,7 @@ private fun DrawScope.drawBody(zones: PlayerZones) {
 fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
     Box(modifier) {
         Canvas(Modifier.fillMaxSize()) {
-            val w = size.width
-            val h = size.height
+            val w = size.width; val h = size.height
             drawRect(color = TrimSilver)
             drawRect(color = Color(0xFFA8C0A0), topLeft = Offset(w * 0.03f, h * 0.12f), size = Size(w * 0.94f, h * 0.76f))
             drawRect(color = Color(0xFF223322), topLeft = Offset(w * 0.06f, h * 0.55f), size = Size(w * 0.88f, h * 0.22f), style = Stroke(width = h * 0.04f))
@@ -320,9 +313,7 @@ fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
             color = Color(0xFF1C2B1C),
             fontSize = 10.sp,
             fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 8.dp, top = 2.dp)
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 2.dp)
         )
     }
 }
@@ -330,12 +321,10 @@ fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
 @Composable
 fun KnobsStrip(modifier: Modifier) {
     Canvas(modifier) {
-        val w = size.width
-        val h = size.height
+        val w = size.width; val h = size.height
         val r = min(w / 9f, h * 0.42f)
         for (i in 0 until 3) {
-            val cx = w * (0.2f + i * 0.3f)
-            val cy = h * 0.5f
+            val cx = w * (0.2f + i * 0.3f); val cy = h * 0.5f
             drawCircle(color = TrimSilver, radius = r, center = Offset(cx, cy))
             drawCircle(color = Color(0xFF1A1A1A), radius = r * 0.82f, center = Offset(cx, cy))
             val ang = (-60 + i * 45).toDouble() * PI / 180.0
