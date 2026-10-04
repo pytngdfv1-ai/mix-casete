@@ -36,7 +36,8 @@ enum class RepeatMode {
 data class CassetteState(
     val title: String = "Mix Tape Vol. 1",
     val artist: String = "DJ Retro",
-    val progress: Float = 0f
+    val progress: Float = 0f,
+    val sourceLabel: String = ""
 )
 
 data class ErrorInfo(
@@ -323,6 +324,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _currentPlaylist.value = listOf(savedSong)
             _currentSongIndex.value = 0
             _currentVideoUrl.value = result.videoUrl
+            _cassette.value = _cassette.value.copy(sourceLabel = result.sourceLabel)
             playSongAt(0)
             _showSearchScreen.value = false
         }
