@@ -3,7 +3,6 @@ package com.mixcasete.app.audio
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.downloader.Downloader
@@ -13,7 +12,6 @@ import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLEncoder
 
 data class SearchResult(
     val url: String,
@@ -71,6 +69,7 @@ class SearchManager(private val context: Context) {
         }
     }
 
+    // SOLO YouTube. Sin iTunes.
     suspend fun search(query: String): SearchOutcome = withContext(Dispatchers.IO) {
         var youTubeError: String? = null
         val youTubeResults = mutableListOf<SearchResult>()
@@ -80,8 +79,6 @@ class SearchManager(private val context: Context) {
             val searchHandler = service.searchQHFactory.fromQuery(query)
             val searchInfo = SearchInfo.getInfo(service, searchHandler)
 
-            // Intentar obtener streams de audio COMPLETOS de hasta 8 videos
-            // (el fetchPage individual es lento y frágil, por eso probamos varios)
             for (item in searchInfo.relatedItems.take(8)) {
                 if (item is StreamInfoItem) {
                     var audioUrl: String? = null
@@ -91,15 +88,12 @@ class SearchManager(private val context: Context) {
                         val streamInfo = StreamInfo.getInfo(extractor)
                         val audioStreams = streamInfo.audioStreams
                         if (audioStreams.isNotEmpty()) {
-                            // Tomar el mejor stream de audio (generalmente M4A/Opus completo)
-                            val bestAudio = audioStreams.maxByOrNull { it.bitrate }
-                                ?: audioStreams.first()
+                            val bestAudio = audioStreams.maxByOrNull { it.bitrate } ?: audioStreams.first()
                             if (bestAudio.content.isNotEmpty()) {
                                 audioUrl = bestAudio.content
                             }
                         }
                     } catch (e: Exception) {
-                        // Este video falló, seguimos con el siguiente
                     }
 
                     if (audioUrl != null) {
@@ -125,46 +119,6 @@ class SearchManager(private val context: Context) {
             return@withContext SearchOutcome(youTubeResults, null, "YouTube (${youTubeResults.size} temas completos)")
         }
 
-        // Fallback: iTunes (previews de 30s con carátula)
-        var itunesError: String? = null
-        val itunesResults = mutableListOf<SearchResult>()
-        try {
-            val encoded = URLEncoder.encode(query, "UTF-8")
-            val url = "https://itunes.apple.com/search?term=$encoded&media=music&limit=20"
-            val connection = URL(url).openConnection() as HttpURLConnection
-            connection.requestMethod = "GET"
-            connection.connectTimeout = 15000
-            connection.readTimeout = 15000
-            connection.setRequestProperty("User-Agent", USER_AGENT)
-            val text = connection.inputStream.bufferedReader().readText()
-            val json = JSONObject(text)
-            val arr = json.getJSONArray("results")
-            for (i in 0 until arr.length()) {
-                val track = arr.getJSONObject(i)
-                val preview = track.optString("previewUrl", "")
-                if (preview.isNotEmpty()) {
-                    itunesResults.add(
-                        SearchResult(
-                            url = preview,
-                            title = track.optString("trackName", "Sin título"),
-                            artist = track.optString("artistName", "Desconocido"),
-                            thumbnailUrl = track.optString("artworkUrl100", "").ifEmpty { null },
-                            videoUrl = null,
-                            isPreview = true,
-                            sourceLabel = "iTunes 30s"
-                        )
-                    )
-                }
-            }
-        } catch (e: Exception) {
-            itunesError = e.javaClass.simpleName + ": " + (e.message ?: "sin detalle")
-        }
-
-        if (itunesResults.isNotEmpty()) {
-            return@withContext SearchOutcome(itunesResults, "YouTube fallo (${youTubeError ?: "0 streams"}); usando iTunes 30s", "iTunes")
-        }
-
-        val combined = "YouTube: ${youTubeError ?: "sin resultados"} | iTunes: ${itunesError ?: "sin resultados"}"
-        SearchOutcome(emptyList(), combined, "ninguna")
+        SearchOutcome(emptyList(), youTubeError ?: "YouTube no devolvio streams de audio", "YouTube")
     }
 }
