@@ -12,3 +12,4 @@ Reproductor de casete retro para Android (Kotlin + Jetpack Compose), compilado y
 ## Compilar localmente
 ```bash
 ./gradlew assembleDebug
+   <!-- Build firmado activado -->
