@@ -72,38 +72,40 @@ object PipedResolver {
 
     private fun viaPiped(videoId: String): String? {
         for (instance in PIPED_INSTANCES) {
-            val url = try {
+            try {
                 val connection = URL("$instance/streams/$videoId").openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 4000
                 connection.readTimeout = 4000
                 connection.setRequestProperty("User-Agent", USER_AGENT)
-                if (connection.responseCode !in 200..299) null
-                else {
-                    val json = JSONObject(connection.inputStream.bufferedReader().readText())
-                    pickBest(json.optJSONArray("audioStreams") ?: return@try null, "url", "bitrate", "mimeType")
-                }
-            } catch (e: Exception) { null }
-            if (url != null) return url
+                if (connection.responseCode !in 200..299) continue
+                val json = JSONObject(connection.inputStream.bufferedReader().readText())
+                val audioStreams = json.optJSONArray("audioStreams") ?: continue
+                val url = pickBest(audioStreams, "url", "bitrate", "mimeType")
+                if (url != null) return url
+            } catch (e: Exception) {
+                continue
+            }
         }
         return null
     }
 
     private fun viaInvidious(videoId: String): String? {
         for (instance in INVIDIOUS_INSTANCES) {
-            val url = try {
+            try {
                 val connection = URL("$instance/api/v1/videos/$videoId").openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 4000
                 connection.readTimeout = 4000
                 connection.setRequestProperty("User-Agent", USER_AGENT)
-                if (connection.responseCode !in 200..299) null
-                else {
-                    val json = JSONObject(connection.inputStream.bufferedReader().readText())
-                    pickBest(json.optJSONArray("adaptiveFormats") ?: return@try null, "url", "bitrate", "type")
-                }
-            } catch (e: Exception) { null }
-            if (url != null) return url
+                if (connection.responseCode !in 200..299) continue
+                val json = JSONObject(connection.inputStream.bufferedReader().readText())
+                val formats = json.optJSONArray("adaptiveFormats") ?: continue
+                val url = pickBest(formats, "url", "bitrate", "type")
+                if (url != null) return url
+            } catch (e: Exception) {
+                continue
+            }
         }
         return null
     }
