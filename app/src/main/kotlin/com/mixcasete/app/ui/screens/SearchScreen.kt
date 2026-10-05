@@ -1,5 +1,6 @@
 package com.mixcasete.app.ui.screens
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
@@ -29,6 +30,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +46,7 @@ import com.mixcasete.app.ui.components.RemoteImage
 
 private val searchQueryState = mutableStateOf("")
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SearchContent(viewModel: AudioPlayerViewModel) {
     var query by searchQueryState
@@ -143,7 +146,7 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
             }
         }
 
-        pendingQueue?.let { r ->
+        pendingQueue?.let { r: SearchResult ->
             AlertDialog(
                 onDismissRequest = { pendingQueue = null },
                 title = { Text("Agregar a continuación") },
