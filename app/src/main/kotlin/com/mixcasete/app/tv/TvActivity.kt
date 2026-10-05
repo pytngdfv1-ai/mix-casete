@@ -3,6 +3,7 @@ package com.mixcasete.app.tv
 import android.annotation.SuppressLint
 import android.os.Bundle
 import android.view.WindowManager
+import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -87,15 +88,16 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
                 factory = { ctx ->
                     WebView(ctx).apply {
                         settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
+                        settings.allowContentAccess = true
                         webViewClient = WebViewClient()
+                        // WebChromeClient es CLAVE para que el video de YouTube renderice (evita pantalla negra)
+                        webChromeClient = WebChromeClient()
                         setBackgroundColor(0xFF000000.toInt())
-                        loadDataWithBaseURL(
-                            "https://www.youtube.com",
-                            buildEmbedHtml(videoId),
-                            "text/html",
-                            "utf-8",
-                            null
+                        loadUrl(
+                            "https://www.youtube.com/embed/$videoId" +
+                                "?autoplay=1&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&fs=0&playsinline=1"
                         )
                     }
                 }
@@ -129,24 +131,4 @@ private fun extractVideoId(url: String?): String? {
     } catch (e: Exception) {
         null
     }
-}
-
-private fun buildEmbedHtml(videoId: String): String {
-    return """
-        <html>
-        <head>
-        <style>
-          html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
-          .wrap{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:100vw;height:56.25vw;max-height:100vh;max-width:177.78vh}
-          iframe{width:100%;height:100%;border:0;display:block}
-        </style>
-        </head>
-        <body>
-        <div class="wrap">
-          <iframe src="https://www.youtube.com/embed/$videoId?autoplay=1&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&fs=0&playsinline=1"
-            allow="autoplay; encrypted-media; fullscreen"></iframe>
-        </div>
-        </body>
-        </html>
-    """.trimIndent()
 }
