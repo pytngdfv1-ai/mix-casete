@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.data.Playlist
 import com.mixcasete.app.data.Song
+import com.mixcasete.app.ui.components.RemoteImage
 
 private var dragActive = false
 
@@ -104,9 +105,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                             TextButton(onClick = {
                                 renameTarget = playlist
                                 renameText = playlist.name
-                            }) {
-                                Text("Renombrar", fontSize = 11.sp)
-                            }
+                            }) { Text("Renombrar", fontSize = 11.sp) }
                             IconButton(onClick = { viewModel.deletePlaylist(playlist) }) {
                                 Icon(Icons.Filled.Delete, contentDescription = "Borrar", tint = Color(0xFFE57373))
                             }
@@ -120,9 +119,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                 var order by remember(playlist.id) { mutableStateOf<List<Song>>(emptyList()) }
 
                 LaunchedEffect(songs) {
-                    if (!dragActive) {
-                        order = songs
-                    }
+                    if (!dragActive) order = songs
                 }
 
                 val rowHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
@@ -198,6 +195,14 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                                         )
                                     }
                             )
+                            // Miniatura del cover
+                            RemoteImage(
+                                url = song.thumbnailUrl,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 4.dp)
+                            )
                             Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
                                 Text(song.title, color = Color(0xFFF2F2F2), fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.Bold)
                                 Text(song.artist, color = Color(0xFFAAAAAA), fontSize = 10.sp, maxLines = 1)
@@ -256,9 +261,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                         showCreateDialog = false
                     }) { Text("Crear") }
                 },
-                dismissButton = {
-                    TextButton(onClick = { showCreateDialog = false }) { Text("Cancelar") }
-                }
+                dismissButton = { TextButton(onClick = { showCreateDialog = false }) { Text("Cancelar") } }
             )
         }
 
@@ -282,9 +285,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                         renameTarget = null
                     }) { Text("Guardar") }
                 },
-                dismissButton = {
-                    TextButton(onClick = { renameTarget = null }) { Text("Cancelar") }
-                }
+                dismissButton = { TextButton(onClick = { renameTarget = null }) { Text("Cancelar") } }
             )
         }
     }
