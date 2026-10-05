@@ -115,15 +115,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val showLoginScreen: StateFlow<Boolean> = _showLoginScreen.asStateFlow()
 
     val allPlaylists = playlistDao.getAllPlaylists().stateIn(
-        viewModelScope,
-        SharingStarted.Lazily,
-        emptyList()
+        viewModelScope, SharingStarted.Lazily, emptyList()
     )
 
     val favoriteSongs = songDao.getFavoriteSongs().stateIn(
-        viewModelScope,
-        SharingStarted.Lazily,
-        emptyList()
+        viewModelScope, SharingStarted.Lazily, emptyList()
     )
 
     private var currentSource: AudioSource? = null
@@ -141,11 +137,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
         controllerFuture?.addListener({
             controller = controllerFuture?.let {
-                try {
-                    it.get()
-                } catch (e: Exception) {
-                    null
-                }
+                try { it.get() } catch (e: Exception) { null }
             }
             setupPlayerListener()
         }, MoreExecutors.directExecutor())
@@ -166,9 +158,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     Player.STATE_ENDED -> handleSongEnded()
                     Player.STATE_IDLE -> {
-                        if (_playState.value != PlayState.STOPPED) {
-                            _playState.value = PlayState.STOPPED
-                        }
+                        if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
                     }
                 }
             }
@@ -191,27 +181,15 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun handleSongEnded() {
         when (_repeatMode.value) {
-            RepeatMode.ONE -> {
-                controller?.seekTo(0)
-                controller?.play()
-            }
+            RepeatMode.ONE -> { controller?.seekTo(0); controller?.play() }
             RepeatMode.ALL -> {
-                if (_currentPlaylist.value.isEmpty()) {
-                    _playState.value = PlayState.STOPPED
-                } else if (_currentSongIndex.value < _currentPlaylist.value.size - 1) {
-                    playNextSong()
-                } else {
-                    playSongAt(0)
-                }
+                if (_currentPlaylist.value.isEmpty()) _playState.value = PlayState.STOPPED
+                else if (_currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong()
+                else playSongAt(0)
             }
             RepeatMode.OFF -> {
-                if (_currentPlaylist.value.isNotEmpty() &&
-                    _currentSongIndex.value < _currentPlaylist.value.size - 1
-                ) {
-                    playNextSong()
-                } else {
-                    _playState.value = PlayState.STOPPED
-                }
+                if (_currentPlaylist.value.isNotEmpty() && _currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong()
+                else _playState.value = PlayState.STOPPED
             }
         }
     }
@@ -219,6 +197,14 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun addLog(message: String) {
         val timestamp = System.currentTimeMillis()
         _debugLog.value = (_debugLog.value + "[$timestamp] $message").takeLast(50)
+    }
+
+    private fun flash(message: String) {
+        _recMessage.value = message
+        viewModelScope.launch {
+            delay(2000)
+            _recMessage.value = null
+        }
     }
 
     fun togglePlayPause() {
@@ -254,20 +240,32 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val song = _currentPlaylist.value.getOrNull(_currentSongIndex.value)
             if (song == null) {
-                _recMessage.value = "Nada sonando para grabar"
-                delay(2000)
-                _recMessage.value = null
+                flash("Nada sonando para grabar")
                 return@launch
             }
             val existing = allPlaylists.value.firstOrNull { it.name == REC_PLAYLIST }
             val playlistId = existing?.id
                 ?: playlistDao.insertPlaylist(Playlist(name = REC_PLAYLIST))
             addSongToPlaylist(playlistId, song)
-            _recMessage.value = "● Grabado en '$REC_PLAYLIST'"
+            flash("● Grabado: ${song.title}")
             addLog("REC: ${song.title} -> $REC_PLAYLIST")
-            delay(2000)
-            _recMessage.value = null
         }
+    }
+
+    // Inserta un resultado de busqueda como SIGUIENTE en la cola
+    fun queueNextFromSearch(result: SearchResult) {
+        val song = Song(
+            url = "",
+            title = result.title,
+            artist = result.artist,
+            thumbnailUrl = result.thumbnailUrl,
+            videoUrl = "https://www.youtube.com/watch?v=${result.videoId}"
+        )
+        val insertAt = (_currentSongIndex.value + 1).coerceAtMost(_currentPlaylist.value.size)
+        val newList = _currentPlaylist.value.toMutableList()
+        newList.add(insertAt, song)
+        _currentPlaylist.value = newList
+        flash("● '${result.title}' quedo como siguiente")
     }
 
     fun rewind() {
@@ -278,18 +276,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun fastForward() {
         val player = controller ?: return
         val duration = player.duration
-        if (duration > 0) {
-            player.seekTo((player.currentPosition + 10000).coerceAtMost(duration))
-        }
+        if (duration > 0) player.seekTo((player.currentPosition + 10000).coerceAtMost(duration))
     }
 
-    fun toggleCalibration() {
-        _calibrationMode.value = !_calibrationMode.value
-    }
+    fun toggleCalibration() { _calibrationMode.value = !_calibrationMode.value }
 
-    fun setLocalUri(uri: Uri) {
-        localUri = uri
-    }
+    fun setLocalUri(uri: Uri) { localUri = uri }
 
     fun search(query: String) {
         if (query.isBlank()) return
@@ -300,7 +292,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _searchResults.value = outcome.results
             _searchError.value = outcome.error
             _isSearching.value = false
-            addLog("Search '${query}': ${outcome.results.size} resultados (${outcome.source})")
+            addLog("Search '${query}': ${outcome.results.size} resultados")
         }
     }
 
@@ -308,11 +300,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             val audioUrl = PipedResolver.resolveAudioUrl(result.videoId)
             if (audioUrl == null) {
-                _errorInfo.value = ErrorInfo("No se pudo obtener el audio de YouTube (todas las instancias Piped fallaron)", SourceType.YOUTUBE)
+                _errorInfo.value = ErrorInfo("No se pudo obtener el audio de YouTube (todas las vias fallaron)", SourceType.YOUTUBE)
                 _showSearchScreen.value = false
                 return@launch
             }
-
             val song = Song(
                 url = audioUrl,
                 title = result.title,
@@ -351,11 +342,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun playPreviousSong() {
         if (_currentPlaylist.value.isEmpty()) return
-        val prevIndex = if (_currentSongIndex.value > 0) {
-            _currentSongIndex.value - 1
-        } else {
-            _currentPlaylist.value.size - 1
-        }
+        val prevIndex = if (_currentSongIndex.value > 0) _currentSongIndex.value - 1
+        else _currentPlaylist.value.size - 1
         playSongAt(prevIndex)
     }
 
@@ -365,20 +353,18 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             val song = _currentPlaylist.value[index]
             _currentSongIndex.value = index
 
-            // Si es de YouTube (tiene videoUrl), re-resolver la URL de audio
-            // porque las URLs de Piped son temporales
             var playUrl = song.url
             val videoId = extractVideoId(song.videoUrl)
             if (videoId != null) {
+                // Si la URL guardada esta vacia o es de YouTube, resolver (usa cache si esta fresca)
                 val resolved = PipedResolver.resolveAudioUrl(videoId)
                 if (resolved != null) {
                     playUrl = resolved
-                    // Actualizar el Song en memoria con la URL nueva
                     val updated = song.copy(url = resolved)
                     val newList = _currentPlaylist.value.toMutableList()
                     newList[index] = updated
                     _currentPlaylist.value = newList
-                } else {
+                } else if (playUrl.isEmpty()) {
                     _errorInfo.value = ErrorInfo("No se pudo resolver audio para '${song.title}'", SourceType.YOUTUBE)
                     return@launch
                 }
