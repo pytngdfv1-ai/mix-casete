@@ -49,6 +49,10 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import kotlinx.coroutines.delay
 
+// User-Agent de Chrome real (SIN el marcador "wv" de WebView) para que YouTube no lo bloquee
+private const val CHROME_UA =
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
 class TvActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled", "SourceLockedOrientationActivity")
@@ -107,12 +111,14 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
                         settings.domStorageEnabled = true
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.allowContentAccess = true
+                        settings.userAgentString = CHROME_UA
                         webViewClient = WebViewClient()
                         webChromeClient = WebChromeClient()
                         setBackgroundColor(0xFF000000.toInt())
+                        // youtube-nocookie + solo parametros validos actuales (evita Error 153)
                         loadUrl(
-                            "https://www.youtube.com/embed/$videoId" +
-                                "?autoplay=1&controls=0&modestbranding=1&rel=0&showinfo=0&iv_load_policy=3&fs=0&playsinline=1"
+                            "https://www.youtube-nocookie.com/embed/$videoId" +
+                                "?autoplay=1&controls=0&rel=0&playsinline=1&modestbranding=1"
                         )
                     }
                 }
