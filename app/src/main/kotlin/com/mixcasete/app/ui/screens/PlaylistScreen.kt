@@ -122,7 +122,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                     if (!dragActive) order = songs
                 }
 
-                val rowHeightPx = with(LocalDensity.current) { 64.dp.toPx() }
+                val rowHeightPx = with(LocalDensity.current) { 72.dp.toPx() }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -149,10 +149,10 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .height(64.dp)
+                                .height(72.dp)
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(Color(0xFF242424))
-                                .padding(horizontal = 4.dp),
+                                .padding(horizontal = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
@@ -160,7 +160,7 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                                 contentDescription = "Arrastrar",
                                 tint = Color(0xFF888888),
                                 modifier = Modifier
-                                    .size(28.dp)
+                                    .size(26.dp)
                                     .pointerInput(order) {
                                         detectDragGesturesAfterLongPress(
                                             onDragStart = { dragActive = true },
@@ -199,13 +199,25 @@ fun PlaylistContent(viewModel: AudioPlayerViewModel) {
                             RemoteImage(
                                 url = song.thumbnailUrl,
                                 modifier = Modifier
-                                    .size(44.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .padding(horizontal = 4.dp)
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .padding(horizontal = 6.dp)
                             )
+                            // Nombre del track y artista/grupo
                             Column(modifier = Modifier.weight(1f).padding(horizontal = 4.dp)) {
-                                Text(song.title, color = Color(0xFFF2F2F2), fontSize = 12.sp, maxLines = 1, fontWeight = FontWeight.Bold)
-                                Text(song.artist, color = Color(0xFFAAAAAA), fontSize = 10.sp, maxLines = 1)
+                                Text(
+                                    text = song.title,
+                                    color = Color(0xFFF2F2F2),
+                                    fontSize = 13.sp,
+                                    maxLines = 1,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(
+                                    text = song.artist,
+                                    color = Color(0xFFAAAAAA),
+                                    fontSize = 11.sp,
+                                    maxLines = 1
+                                )
                             }
                             IconButton(onClick = {
                                 if (index > 0) {
