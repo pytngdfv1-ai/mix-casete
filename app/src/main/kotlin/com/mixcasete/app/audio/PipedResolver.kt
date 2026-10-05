@@ -1,9 +1,10 @@
 package com.mixcasete.app.audio
 
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
@@ -19,18 +20,23 @@ object PipedResolver {
         "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
 
     private const val CACHE_TTL_MS = 45 * 60 * 1000L
+    private const val GLOBAL_TIMEOUT_MS = 15000L
     private val cache = mutableMapOf<String, Pair<Long, String>>()
 
     private val PIPED_INSTANCES = listOf(
         "https://pipedapi.kavin.rocks",
         "https://pipedapi.adminforge.de",
-        "https://api.piped.projectsegfau.lt"
+        "https://api.piped.projectsegfau.lt",
+        "https://pipedapi.in.projectsegfau.lt",
+        "https://pipedapi.reallyaweso.me"
     )
 
     private val INVIDIOUS_INSTANCES = listOf(
         "https://inv.nadeko.net",
         "https://invidious.nerdvpn.de",
-        "https://yewtu.be"
+        "https://yewtu.be",
+        "https://inv.tux.pizza",
+        "https://invidious.f5.si"
     )
 
     suspend fun resolveAudioUrl(videoId: String): String? {
@@ -40,18 +46,26 @@ object PipedResolver {
 
         val resolved = withContext(Dispatchers.IO) {
             coroutineScope {
-                val defs = listOf(
-                    async { viaNewPipe(videoId) },
-                    async { viaPiped(videoId) },
-                    async { viaInvidious(videoId) }
-                )
-                val all = withTimeoutOrNull(6000) { defs.awaitAll() }
-                if (all != null) {
-                    all.firstOrNull { !it.isNullOrEmpty() }
-                } else {
-                    defs.firstNotNullOfOrNull { d ->
-                        runCatching { if (d.isCompleted) d.getCompleted() else null }.getOrNull()
+                val channel = Channel<String?>(Channel.UNLIMITED)
+                val jobs = mutableListOf<Job>()
+
+                jobs.add(launch { channel.send(safe { viaNewPipe(videoId) }) })
+                jobs.add(launch { channel.send(safe { viaPiped(videoId) }) })
+                jobs.add(launch { channel.send(safe { viaInvidious(videoId) }) })
+
+                var result: String? = null
+                var terminadas = 0
+                val total = jobs.size
+
+                withTimeoutOrNull(GLOBAL_TIMEOUT_MS) {
+                    while (terminadas < total && result == null) {
+                        val r = channel.receive()
+                        terminadas++
+                        if (r != null) result = r
                     }
+                    result
+                }.also {
+                    jobs.forEach { j -> j.cancel() }
                 }
             }
         }
@@ -60,52 +74,52 @@ object PipedResolver {
         return resolved
     }
 
+    private inline fun safe(block: () -> String?): String? {
+        return try { block() } catch (e: Exception) { null }
+    }
+
     private fun viaNewPipe(videoId: String): String? {
-        return try {
-            val watchUrl = "https://www.youtube.com/watch?v=$videoId"
-            val extractor = ServiceList.YouTube.getStreamExtractor(watchUrl)
-            extractor.fetchPage()
-            val info = StreamInfo.getInfo(extractor)
-            (info.audioStreams.maxByOrNull { it.bitrate } ?: info.audioStreams.firstOrNull())?.content
-        } catch (e: Exception) { null }
+        val watchUrl = "https://www.youtube.com/watch?v=$videoId"
+        val extractor = ServiceList.YouTube.getStreamExtractor(watchUrl)
+        extractor.fetchPage()
+        val info = StreamInfo.getInfo(extractor)
+        return (info.audioStreams.maxByOrNull { it.bitrate } ?: info.audioStreams.firstOrNull())?.content
     }
 
     private fun viaPiped(videoId: String): String? {
         for (instance in PIPED_INSTANCES) {
-            try {
+            val url = safe {
                 val connection = URL("$instance/streams/$videoId").openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
-                connection.connectTimeout = 4000
-                connection.readTimeout = 4000
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
                 connection.setRequestProperty("User-Agent", USER_AGENT)
-                if (connection.responseCode !in 200..299) continue
-                val json = JSONObject(connection.inputStream.bufferedReader().readText())
-                val audioStreams = json.optJSONArray("audioStreams") ?: continue
-                val url = pickBest(audioStreams, "url", "bitrate", "mimeType")
-                if (url != null) return url
-            } catch (e: Exception) {
-                continue
+                if (connection.responseCode !in 200..299) null
+                else {
+                    val json = JSONObject(connection.inputStream.bufferedReader().readText())
+                    pickBest(json.optJSONArray("audioStreams") ?: return@safe null, "url", "bitrate", "mimeType")
+                }
             }
+            if (url != null) return url
         }
         return null
     }
 
     private fun viaInvidious(videoId: String): String? {
         for (instance in INVIDIOUS_INSTANCES) {
-            try {
+            val url = safe {
                 val connection = URL("$instance/api/v1/videos/$videoId").openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
-                connection.connectTimeout = 4000
-                connection.readTimeout = 4000
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
                 connection.setRequestProperty("User-Agent", USER_AGENT)
-                if (connection.responseCode !in 200..299) continue
-                val json = JSONObject(connection.inputStream.bufferedReader().readText())
-                val formats = json.optJSONArray("adaptiveFormats") ?: continue
-                val url = pickBest(formats, "url", "bitrate", "type")
-                if (url != null) return url
-            } catch (e: Exception) {
-                continue
+                if (connection.responseCode !in 200..299) null
+                else {
+                    val json = JSONObject(connection.inputStream.bufferedReader().readText())
+                    pickBest(json.optJSONArray("adaptiveFormats") ?: return@safe null, "url", "bitrate", "type")
+                }
             }
+            if (url != null) return url
         }
         return null
     }
