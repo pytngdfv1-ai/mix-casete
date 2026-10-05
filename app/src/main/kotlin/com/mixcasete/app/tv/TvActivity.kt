@@ -55,7 +55,6 @@ class TvActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Forzar horizontal (landscape) en Modo TV
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
 
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -129,7 +128,6 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
         }
 
         if (showControls) {
-            // X para salir (arriba a la derecha)
             IconButton(
                 onClick = onExit,
                 modifier = Modifier
@@ -142,7 +140,6 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
                 Icon(Icons.Filled.Close, contentDescription = "Salir de TV", tint = Color.White)
             }
 
-            // Engranaje de conexiones (abajo a la derecha)
             IconButton(
                 onClick = { showConnect = true },
                 modifier = Modifier
@@ -176,7 +173,7 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
                         }
                         TextButton(onClick = {
                             showConnect = false
-                            launchSystemSettings(context, Settings.ACTION_WIRELESS_DISPLAY_SETTINGS)
+                            launchSystemSettings(context, "android.settings.WIFI_DISPLAY_SETTINGS")
                         }) {
                             Text("Wireless Display / Smart View (duplicar)")
                         }
@@ -194,7 +191,6 @@ private fun launchSystemSettings(context: android.content.Context, action: Strin
     try {
         context.startActivity(android.content.Intent(action))
     } catch (e: Exception) {
-        // Si el dispositivo no tiene esa pantalla, abrir la de display genérica
         try {
             context.startActivity(android.content.Intent(Settings.ACTION_DISPLAY_SETTINGS))
         } catch (e2: Exception) {
