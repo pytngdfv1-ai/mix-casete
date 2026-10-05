@@ -1,7 +1,7 @@
 package com.mixcasete.app.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -16,12 +16,14 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -37,6 +39,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mixcasete.app.audio.AudioPlayerViewModel
+import com.mixcasete.app.audio.SearchResult
 import com.mixcasete.app.ui.components.RemoteImage
 
 private val searchQueryState = mutableStateOf("")
@@ -47,6 +50,7 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
     val results by viewModel.searchResults.collectAsState()
     val isSearching by viewModel.isSearching.collectAsState()
     val searchError by viewModel.searchError.collectAsState()
+    var pendingQueue by remember { mutableStateOf<SearchResult?>(null) }
 
     MaterialTheme(colorScheme = darkColorScheme()) {
         Column(
@@ -67,34 +71,22 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
                     placeholder = { Text("Buscar tema o artista...") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(
-                        onSearch = { viewModel.search(query) }
-                    )
+                    keyboardActions = KeyboardActions(onSearch = { viewModel.search(query) })
                 )
                 IconButton(
                     onClick = { viewModel.search(query) },
-                    modifier = Modifier
-                        .size(48.dp)
-                        .background(Color(0xFF2E4A2E), RoundedCornerShape(8.dp))
+                    modifier = Modifier.size(48.dp).background(Color(0xFF2E4A2E), RoundedCornerShape(8.dp))
                 ) {
-                    Icon(
-                        imageVector = Icons.Filled.Search,
-                        contentDescription = "Buscar",
-                        tint = Color(0xFF81C784)
-                    )
+                    Icon(Icons.Filled.Search, contentDescription = "Buscar", tint = Color(0xFF81C784))
                 }
             }
 
             when {
                 isSearching -> {
                     Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
                         horizontalArrangement = Arrangement.Center
-                    ) {
-                        CircularProgressIndicator(color = Color(0xFF81C784))
-                    }
+                    ) { CircularProgressIndicator(color = Color(0xFF81C784)) }
                 }
                 searchError != null -> {
                     Text(
@@ -120,21 +112,18 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(6.dp))
-                            .clickable { viewModel.playSearchResult(result) }
+                            .combinedClickable(
+                                onClick = { viewModel.playSearchResult(result) },
+                                onLongClick = { pendingQueue = result }
+                            )
                             .padding(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         RemoteImage(
                             url = result.thumbnailUrl,
-                            modifier = Modifier
-                                .size(48.dp)
-                                .clip(RoundedCornerShape(4.dp))
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(4.dp))
                         )
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(start = 8.dp)
-                        ) {
+                        Column(modifier = Modifier.weight(1f).padding(start = 8.dp)) {
                             Text(
                                 text = result.title,
                                 color = Color(0xFFF2F2F2),
@@ -152,6 +141,23 @@ fun SearchContent(viewModel: AudioPlayerViewModel) {
                     }
                 }
             }
+        }
+
+        pendingQueue?.let { r ->
+            AlertDialog(
+                onDismissRequest = { pendingQueue = null },
+                title = { Text("Agregar a continuación") },
+                text = { Text("¿Colocar '${r.title}' como SIGUIENTE tema a reproducir?") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        viewModel.queueNextFromSearch(r)
+                        pendingQueue = null
+                    }) { Text("Sí, siguiente") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { pendingQueue = null }) { Text("Cancelar") }
+                }
+            )
         }
     }
 }
