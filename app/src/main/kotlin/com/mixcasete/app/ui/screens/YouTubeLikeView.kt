@@ -1,6 +1,9 @@
 package com.mixcasete.app.ui.screens
 
-import android.content.Context
+import android.annotation.SuppressLint
+import android.webkit.WebChromeClient
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -33,6 +36,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -46,9 +50,13 @@ import androidx.media3.ui.PlayerView
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.audio.VideoResolver
 
+private const val CHROME_UA =
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
-    val context = androidx.compose.ui.platform.LocalContext.current
+    val context = LocalContext.current
     val cassette by viewModel.cassette.collectAsState()
     val currentVideoUrl by viewModel.currentVideoUrl.collectAsState()
     val currentPlaylist by viewModel.currentPlaylist.collectAsState()
@@ -56,11 +64,14 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
     val isFavorite = currentPlaylist.getOrNull(currentIndex)?.isFavorite ?: false
 
     var videoStreamUrl by remember { mutableStateOf<String?>(null) }
+    var useIframe by remember { mutableStateOf(false) }
     var isPlaying by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentVideoUrl) {
         val id = extractVideoIdLocal(currentVideoUrl)
-        videoStreamUrl = id?.let { VideoResolver.resolveProgressiveVideoUrl(it) }
+        val url = id?.let { VideoResolver.resolveProgressiveVideoUrl(it) }
+        videoStreamUrl = url
+        useIframe = (url == null && id != null)
     }
 
     val exo = remember {
@@ -100,17 +111,44 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
             Text("Mix.Casete · Modo YouTube", color = Color(0xFFDDDDDD), fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
 
-        AndroidView(
-            modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    player = exo
-                    useController = true
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setBackgroundColor(0xFF000000.toInt())
+        if (videoStreamUrl != null) {
+            AndroidView(
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exo
+                        useController = true
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setBackgroundColor(0xFF000000.toInt())
+                    }
                 }
+            )
+        } else if (useIframe) {
+            // Fallback: reproductor OFICIAL de YouTube (siempre reproduce si el video permite embed)
+            val videoId = extractVideoIdLocal(currentVideoUrl)
+            AndroidView(
+                modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
+                factory = { ctx ->
+                    WebView(ctx).apply {
+                        settings.javaScriptEnabled = true
+                        settings.domStorageEnabled = true
+                        settings.mediaPlaybackRequiresUserGesture = false
+                        settings.userAgentString = CHROME_UA
+                        webViewClient = WebViewClient()
+                        webChromeClient = WebChromeClient()
+                        setBackgroundColor(0xFF000000.toInt())
+                        loadUrl("https://www.youtube-nocookie.com/embed/$videoId?autoplay=1&controls=1&rel=0&playsinline=1")
+                    }
+                }
+            )
+        } else {
+            androidx.compose.foundation.layout.Box(
+                Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF111111)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text("Sin video disponible para este tema", color = Color(0xFF888888), fontSize = 13.sp)
             }
-        )
+        }
 
         Column(Modifier.fillMaxWidth().padding(16.dp)) {
             Text(cassette.title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold, maxLines = 2)
@@ -124,18 +162,20 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
                 IconButton(onClick = { viewModel.tvPrev() }) {
                     Icon(Icons.Filled.SkipPrevious, contentDescription = "Anterior", tint = Color.White)
                 }
-                IconButton(onClick = {
-                    if (exo.isPlaying) exo.pause() else exo.play()
-                }) {
-                    Icon(if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow, contentDescription = "Play/Pausa", tint = Color.White, modifier = Modifier.size(40.dp))
+                IconButton(onClick = { if (exo.isPlaying) exo.pause() else exo.play() }) {
+                    Icon(
+                        if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                        contentDescription = "Play/Pausa", tint = Color.White, modifier = Modifier.size(40.dp)
+                    )
                 }
                 IconButton(onClick = { viewModel.tvNext() }) {
                     Icon(Icons.Filled.SkipNext, contentDescription = "Siguiente", tint = Color.White)
                 }
-                IconButton(onClick = {
-                    currentPlaylist.getOrNull(currentIndex)?.let { viewModel.toggleFavorite(it) }
-                }) {
-                    Icon(if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, contentDescription = "Favorito", tint = if (isFavorite) Color(0xFFE57373) else Color.White)
+                IconButton(onClick = { currentPlaylist.getOrNull(currentIndex)?.let { viewModel.toggleFavorite(it) } }) {
+                    Icon(
+                        if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
+                        contentDescription = "Favorito", tint = if (isFavorite) Color(0xFFE57373) else Color.White
+                    )
                 }
                 IconButton(onClick = { viewModel.recordCurrentTrack() }) {
                     Icon(Icons.Filled.FiberManualRecord, contentDescription = "Grabar", tint = Color(0xFFE53935))
