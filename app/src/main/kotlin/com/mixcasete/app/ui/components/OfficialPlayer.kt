@@ -14,19 +14,20 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mixcasete.app.audio.AudioPlayerViewModel
+import kotlinx.coroutines.delay
 
-private const val CHROME_UA =
-    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+private const val ORIGIN = "https://www.youtube.com"
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun OfficialPlayer(viewModel: AudioPlayerViewModel, modifier: Modifier = Modifier) {
     val currentVideoUrl by viewModel.currentVideoUrl.collectAsState()
     val command by viewModel.ytCommand.collectAsState()
+    val errorInfo by viewModel.errorInfo.collectAsState()
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var retries by remember { mutableStateOf(0) }
     val html = remember { buildHtml() }
 
     DisposableEffect(Unit) { onDispose { webView?.destroy() } }
@@ -38,14 +39,14 @@ fun OfficialPlayer(viewModel: AudioPlayerViewModel, modifier: Modifier = Modifie
                 val cm = CookieManager.getInstance()
                 cm.setAcceptCookie(true)
                 cm.setAcceptThirdPartyCookies(this, true)
-                cm.setCookie(".youtube.com", "SOCS=CAI")
-                cm.setCookie(".youtube.com", "CONSENT=YES+1")
+                // Solo la cookie de consentimiento valida (SOCS); NO inventar CONSENT
+                cm.setCookie(".youtube.com", "SOCS=CAI; path=/; secure")
                 cm.flush()
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.databaseEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = false
-                settings.userAgentString = CHROME_UA
+                // NO falsear el User-Agent: el UA por defecto del WebView evita el chequeo anti-bot
                 webViewClient = WebViewClient()
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface fun onState(s: Int) { viewModel.reportYtState(s) }
@@ -53,15 +54,27 @@ fun OfficialPlayer(viewModel: AudioPlayerViewModel, modifier: Modifier = Modifie
                     @JavascriptInterface fun onDur(d: Double) { viewModel.reportYtDuration(d.toFloat()) }
                     @JavascriptInterface fun onErr(e: Int) { viewModel.reportYtError(e) }
                 }, "Android")
-                loadDataWithBaseURL("https://www.youtube.com/", html, "text/html", "utf-8", null)
+                loadDataWithBaseURL("$ORIGIN/", html, "text/html", "utf-8", null)
                 webView = this
             }
         }
     )
 
-    LaunchedEffect(currentVideoUrl) {
+    fun loadCurrent() {
         extractId(currentVideoUrl)?.let { id ->
             webView?.evaluateJavascript("window.loadById && loadById('$id')", null)
+        }
+    }
+
+    LaunchedEffect(currentVideoUrl) { loadCurrent() }
+
+    // Un reintento automatico si el player reporto error (transitorio)
+    LaunchedEffect(errorInfo) {
+        if (errorInfo != null && retries < 1) {
+            retries++
+            delay(900)
+            webView?.evaluateJavascript("window.retryBoot && retryBoot()", null)
+            loadCurrent()
         }
     }
 
@@ -72,9 +85,7 @@ fun OfficialPlayer(viewModel: AudioPlayerViewModel, modifier: Modifier = Modifie
             "play" -> wv.evaluateJavascript("window.playV && playV()", null)
             "pause" -> wv.evaluateJavascript("window.pauseV && pauseV()", null)
             "seek" -> wv.evaluateJavascript("window.seekV && seekV(${cmd.sec})", null)
-            "load" -> extractId(viewModel.currentVideoUrl.value)?.let {
-                wv.evaluateJavascript("window.loadById && loadById('$it')", null)
-            }
+            "load" -> loadCurrent()
         }
     }
 }
@@ -96,16 +107,28 @@ html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
 <body><div id="wrap"><div id="player"></div></div>
 <script src="https://www.youtube.com/iframe_api"></script>
 <script>
-var player; var ready=false; var pendingId=null;
-function onYouTubeIframeAPIReady(){
+var player; var ready=false; var pendingId=null; var booting=false;
+function onYouTubeIframeAPIReady(){ boot(); }
+function boot(){
+  if(booting) return; booting=true;
   player=new YT.Player('player',{
-    playerVars:{controls:0,rel:0,playsinline:1,modestbranding:1,iv_load_policy:3},
+    host:'https://www.youtube.com',
+    playerVars:{
+      controls:0, rel:0, playsinline:1, modestbranding:1, iv_load_policy:3,
+      origin:'https://www.youtube.com'
+    },
     events:{
-      onReady:function(){ ready=true; if(pendingId){ player.loadVideoById(pendingId,0,'default'); pendingId=null; } },
+      onReady:function(){ ready=true; booting=false; if(pendingId){ player.loadVideoById(pendingId,0,'default'); pendingId=null; } },
       onStateChange:function(e){ if(window.Android) Android.onState(e.data); },
       onError:function(e){ if(window.Android) Android.onErr(e.data); }
     }
   });
+}
+function retryBoot(){
+  try{ if(player&&player.destroy){ player.destroy(); } }catch(e){}
+  var d=document.createElement('div'); d.id='player';
+  document.getElementById('wrap').appendChild(d);
+  booting=false; boot();
 }
 setInterval(function(){
   if(ready&&player&&player.getCurrentTime){
