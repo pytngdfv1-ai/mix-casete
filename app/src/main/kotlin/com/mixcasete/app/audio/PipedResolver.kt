@@ -29,6 +29,7 @@ object PipedResolver {
         "https://pipedapi.adminforge.de",
         "https://api.piped.projectsegfau.lt",
         "https://pipedapi.in.projectsegfau.lt",
+        "https://pipedapi.leptons.xyz",
         "https://pipedapi.reallyaweso.me"
     )
 
@@ -37,7 +38,9 @@ object PipedResolver {
         "https://invidious.nerdvpn.de",
         "https://yewtu.be",
         "https://inv.tux.pizza",
-        "https://invidious.f5.si"
+        "https://invidious.f5.si",
+        "https://iv.melmac.space",
+        "https://invidious.privacyredirect.com"
     )
 
     suspend fun resolveAudioUrl(videoId: String): String? {
@@ -57,6 +60,7 @@ object PipedResolver {
         coroutineScope {
             val channel = Channel<String?>(Channel.UNLIMITED)
             val jobs = mutableListOf<Job>()
+            jobs.add(launch { channel.send(safe { InnerTubeClient.resolveUrl(videoId) }) })
             jobs.add(launch { channel.send(safe { viaInvidious(videoId) }) })
             jobs.add(launch { channel.send(safe { viaPiped(videoId) }) })
             jobs.add(launch { channel.send(safe { viaNewPipe(videoId) }) })
@@ -94,7 +98,7 @@ object PipedResolver {
                 if (c.responseCode !in 200..299) null
                 else {
                     val json = JSONObject(c.inputStream.bufferedReader().readText())
-                    pickBest(json.optJSONArray("audioStreams") ?: return@safe null, "url", "bitrate", "mimeType")
+                    pickBest(json.optJSONArray("audioStreams"), "url", "bitrate", "mimeType")
                 }
             }
             if (url != null) return url
@@ -102,7 +106,6 @@ object PipedResolver {
         return null
     }
 
-    // Invidious: prioriza stream PROGRESIVO (mp4 video+audio); si no, audio adaptativo
     private fun viaInvidious(videoId: String): String? {
         for (instance in INVIDIOUS_INSTANCES) {
             val url = safe {
@@ -113,7 +116,7 @@ object PipedResolver {
                 else {
                     val json = JSONObject(c.inputStream.bufferedReader().readText())
                     pickProgressive(json.optJSONArray("formatStreams"))
-                        ?: pickBest(json.optJSONArray("adaptiveFormats") ?: return@safe null, "url", "bitrate", "type")
+                        ?: pickBest(json.optJSONArray("adaptiveFormats"), "url", "bitrate", "type")
                 }
             }
             if (url != null) return url
