@@ -27,7 +27,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
@@ -39,7 +38,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.tv.TvActivity
 import com.mixcasete.app.ui.components.CassettePlayer
-import com.mixcasete.app.ui.components.OfficialPlayer
 import com.mixcasete.app.ui.screens.LoginContent
 import com.mixcasete.app.ui.screens.PlaylistContent
 import com.mixcasete.app.ui.screens.SearchContent
@@ -128,11 +126,8 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 )
             }
 
-            // Reproductor oficial OCULTO: motor de audio de YouTube en modo casete
-            OfficialPlayer(viewModel = viewModel, modifier = Modifier.size(1.dp).alpha(0.01f))
-
             IconButton(
-                onClick = { youTubeMode = true },
+                onClick = { viewModel.pauseForTv(); youTubeMode = true },
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(40.dp).clip(CircleShape).background(Color(0xFF3A3A3A))
             ) { Icon(Icons.Filled.Tv, contentDescription = "Modo YouTube", tint = Color(0xFF81C784)) }
         }
