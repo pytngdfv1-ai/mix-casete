@@ -27,6 +27,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.layout
@@ -38,6 +39,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.tv.TvActivity
 import com.mixcasete.app.ui.components.CassettePlayer
+import com.mixcasete.app.ui.components.OfficialPlayer
 import com.mixcasete.app.ui.screens.LoginContent
 import com.mixcasete.app.ui.screens.PlaylistContent
 import com.mixcasete.app.ui.screens.SearchContent
@@ -48,7 +50,6 @@ data class Zone(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
     val w: Float get() = x1 - x0
     val h: Float get() = y1 - y0
 }
-
 data class PlayerZones(
     val speaker: Zone?, val screen: Zone?, val knobs: Zone?, val window: Zone,
     val functionBar: Zone, val keyboard: Zone, val sideGrille: Zone?, val legL: Zone, val legR: Zone
@@ -58,20 +59,17 @@ data class PlayerZones(
         "window" to window, "functionBar" to functionBar, "keyboard" to keyboard, sideGrille?.let { "side" to it }
     )
 }
-
 fun portraitZones() = PlayerZones(
     speaker = Zone(0.07f, 0.015f, 0.93f, 0.335f), screen = Zone(0.07f, 0.35f, 0.60f, 0.405f),
     knobs = Zone(0.63f, 0.345f, 0.93f, 0.41f), window = Zone(0.08f, 0.425f, 0.92f, 0.715f),
     functionBar = Zone(0.08f, 0.73f, 0.92f, 0.775f), keyboard = Zone(0.13f, 0.79f, 0.87f, 0.955f),
     sideGrille = Zone(0.895f, 0.79f, 0.965f, 0.90f), legL = Zone(0.10f, 0.965f, 0.20f, 1.0f), legR = Zone(0.80f, 0.965f, 0.90f, 1.0f)
 )
-
 fun landscapeZones() = PlayerZones(
     speaker = null, screen = null, knobs = null, window = Zone(0.015f, 0.015f, 0.985f, 0.72f),
     functionBar = Zone(0.015f, 0.735f, 0.985f, 0.79f), keyboard = Zone(0.015f, 0.805f, 0.985f, 0.955f),
     sideGrille = null, legL = Zone(0.06f, 0.965f, 0.14f, 1.0f), legR = Zone(0.86f, 0.965f, 0.94f, 1.0f)
 )
-
 fun Modifier.fillZone(zone: Zone): Modifier = this.then(
     Modifier.layout { measurable, constraints ->
         val pw = constraints.maxWidth; val ph = constraints.maxHeight
@@ -130,13 +128,13 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 )
             }
 
-            // Botón flotante para entrar al Modo YouTube
+            // Reproductor oficial OCULTO: motor de audio de YouTube en modo casete
+            OfficialPlayer(viewModel = viewModel, modifier = Modifier.size(1.dp).alpha(0.01f))
+
             IconButton(
-                onClick = { viewModel.pauseForTv(); youTubeMode = true },
+                onClick = { youTubeMode = true },
                 modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(40.dp).clip(CircleShape).background(Color(0xFF3A3A3A))
-            ) {
-                Icon(Icons.Filled.Tv, contentDescription = "Modo YouTube", tint = Color(0xFF81C784))
-            }
+            ) { Icon(Icons.Filled.Tv, contentDescription = "Modo YouTube", tint = Color(0xFF81C784)) }
         }
 
         if (showSearch) OverlayPanel(isPortrait = maxHeight > maxWidth, onClose = viewModel::toggleSearchScreen) { SearchContent(viewModel) }
