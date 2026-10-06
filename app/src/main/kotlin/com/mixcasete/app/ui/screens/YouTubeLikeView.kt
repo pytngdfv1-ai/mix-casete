@@ -2,6 +2,7 @@ package com.mixcasete.app.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
@@ -39,13 +40,17 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.mixcasete.app.audio.AudioPlayerViewModel
 import com.mixcasete.app.audio.PlayState
 import com.mixcasete.app.audio.VideoResolver
+import com.mixcasete.app.audio.VideoStream
 import com.mixcasete.app.ui.components.EmbedFallback
 
 @Composable
@@ -57,12 +62,11 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
     val currentIndex by viewModel.currentSongIndex.collectAsState()
     val isFavorite = currentPlaylist.getOrNull(currentIndex)?.isFavorite ?: false
 
-    var videoStreamUrl by remember { mutableStateOf<String?>(null) }
+    var stream by remember { mutableStateOf<VideoStream?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
 
     LaunchedEffect(currentVideoUrl) {
-        val id = extractId(currentVideoUrl)
-        videoStreamUrl = id?.let { VideoResolver.resolveProgressiveVideoUrl(it) }
+        stream = extractId(currentVideoUrl)?.let { VideoResolver.resolve(it) }
     }
 
     val exo = remember {
@@ -75,8 +79,19 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
         exo.addListener(l)
         onDispose { exo.removeListener(l); exo.release() }
     }
-    LaunchedEffect(videoStreamUrl) {
-        videoStreamUrl?.let { exo.setMediaItem(MediaItem.fromUri(it)); exo.prepare(); exo.playWhenReady = true }
+
+    LaunchedEffect(stream) {
+        val s = stream ?: return@LaunchedEffect
+        val factory = DefaultDataSource.Factory(context)
+        if (s.progressiveUrl != null) {
+            exo.setMediaItem(MediaItem.fromUri(s.progressiveUrl))
+        } else if (s.videoUrl != null && s.audioUrl != null) {
+            val video = ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(s.videoUrl))
+            val audio = ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(s.audioUrl))
+            exo.setMediaSource(MergingMediaSource(video, audio))
+        } else return@LaunchedEffect
+        exo.prepare()
+        exo.playWhenReady = true
     }
 
     Column(Modifier.fillMaxSize().background(Color.Black)) {
@@ -86,8 +101,8 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
         }
 
         val vid = extractId(currentVideoUrl)
-        if (videoStreamUrl != null) {
-            AndroidView(
+        when {
+            stream != null && stream!!.playable -> AndroidView(
                 modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f),
                 factory = { ctx ->
                     PlayerView(ctx).apply {
@@ -97,10 +112,8 @@ fun YouTubeLikeView(viewModel: AudioPlayerViewModel, onExit: () -> Unit) {
                     }
                 }
             )
-        } else if (vid != null) {
-            EmbedFallback(videoId = vid, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
-        } else {
-            androidx.compose.foundation.layout.Box(
+            vid != null -> EmbedFallback(videoId = vid, modifier = Modifier.fillMaxWidth().aspectRatio(16f / 9f))
+            else -> Box(
                 Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color(0xFF111111)),
                 contentAlignment = Alignment.Center
             ) { Text("Reproduce un tema primero", color = Color(0xFF888888), fontSize = 13.sp) }
