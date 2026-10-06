@@ -25,13 +25,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-enum class PlayState {
-    STOPPED, PLAYING, PAUSED, EJECTED, ERROR
-}
-
-enum class RepeatMode {
-    OFF, ONE, ALL
-}
+enum class PlayState { STOPPED, PLAYING, PAUSED, EJECTED, ERROR }
+enum class RepeatMode { OFF, ONE, ALL }
 
 data class CassetteState(
     val title: String = "Mix Tape Vol. 1",
@@ -40,16 +35,11 @@ data class CassetteState(
     val sourceLabel: String = ""
 )
 
-data class ErrorInfo(
-    val message: String,
-    val source: SourceType?
-)
+data class ErrorInfo(val message: String, val source: SourceType?)
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object {
-        const val REC_PLAYLIST = "Grabaciones"
-    }
+    companion object { const val REC_PLAYLIST = "Grabaciones" }
 
     private val sourceManager = SourceManager(application)
     private val searchManager = SearchManager(application)
@@ -62,83 +52,54 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private val _playState = MutableStateFlow(PlayState.STOPPED)
     val playState: StateFlow<PlayState> = _playState.asStateFlow()
-
     private val _isLidOpen = MutableStateFlow(false)
     val isLidOpen: StateFlow<Boolean> = _isLidOpen.asStateFlow()
-
     private val _cassette = MutableStateFlow(CassetteState())
     val cassette: StateFlow<CassetteState> = _cassette.asStateFlow()
-
     private val _calibrationMode = MutableStateFlow(false)
     val calibrationMode: StateFlow<Boolean> = _calibrationMode.asStateFlow()
-
     private val _errorInfo = MutableStateFlow<ErrorInfo?>(null)
     val errorInfo: StateFlow<ErrorInfo?> = _errorInfo.asStateFlow()
-
     private val _recMessage = MutableStateFlow<String?>(null)
     val recMessage: StateFlow<String?> = _recMessage.asStateFlow()
-
     private val _debugLog = MutableStateFlow<List<String>>(emptyList())
     val debugLog: StateFlow<List<String>> = _debugLog.asStateFlow()
-
     private val _searchResults = MutableStateFlow<List<SearchResult>>(emptyList())
     val searchResults: StateFlow<List<SearchResult>> = _searchResults.asStateFlow()
-
     private val _searchError = MutableStateFlow<String?>(null)
     val searchError: StateFlow<String?> = _searchError.asStateFlow()
-
     private val _isSearching = MutableStateFlow(false)
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
-
     private val _currentPlaylist = MutableStateFlow<List<Song>>(emptyList())
     val currentPlaylist: StateFlow<List<Song>> = _currentPlaylist.asStateFlow()
-
     private val _currentSongIndex = MutableStateFlow(0)
     val currentSongIndex: StateFlow<Int> = _currentSongIndex.asStateFlow()
-
     private val _currentVideoUrl = MutableStateFlow<String?>(null)
     val currentVideoUrl: StateFlow<String?> = _currentVideoUrl.asStateFlow()
-
     private val _isShuffleEnabled = MutableStateFlow(false)
     val isShuffleEnabled: StateFlow<Boolean> = _isShuffleEnabled.asStateFlow()
-
     private val _repeatMode = MutableStateFlow(RepeatMode.OFF)
     val repeatMode: StateFlow<RepeatMode> = _repeatMode.asStateFlow()
-
     private val _showSearchScreen = MutableStateFlow(false)
     val showSearchScreen: StateFlow<Boolean> = _showSearchScreen.asStateFlow()
-
     private val _showPlaylistScreen = MutableStateFlow(false)
     val showPlaylistScreen: StateFlow<Boolean> = _showPlaylistScreen.asStateFlow()
-
     private val _showLoginScreen = MutableStateFlow(false)
     val showLoginScreen: StateFlow<Boolean> = _showLoginScreen.asStateFlow()
 
-    val allPlaylists = playlistDao.getAllPlaylists().stateIn(
-        viewModelScope, SharingStarted.Lazily, emptyList()
-    )
-
-    val favoriteSongs = songDao.getFavoriteSongs().stateIn(
-        viewModelScope, SharingStarted.Lazily, emptyList()
-    )
+    val allPlaylists = playlistDao.getAllPlaylists().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val favoriteSongs = songDao.getFavoriteSongs().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private var currentSource: AudioSource? = null
     private var localUri: Uri? = null
 
-    init {
-        initMediaController()
-    }
+    init { initMediaController() }
 
     private fun initMediaController() {
-        val sessionToken = SessionToken(
-            getApplication(),
-            ComponentName(getApplication(), PlaybackService::class.java)
-        )
+        val sessionToken = SessionToken(getApplication(), ComponentName(getApplication(), PlaybackService::class.java))
         controllerFuture = MediaController.Builder(getApplication(), sessionToken).buildAsync()
         controllerFuture?.addListener({
-            controller = controllerFuture?.let {
-                try { it.get() } catch (e: Exception) { null }
-            }
+            controller = controllerFuture?.let { try { it.get() } catch (e: Exception) { null } }
             setupPlayerListener()
         }, MoreExecutors.directExecutor())
     }
@@ -148,33 +109,21 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             override fun onPlaybackStateChanged(playbackState: Int) {
                 when (playbackState) {
                     Player.STATE_READY -> {
-                        if (controller?.isPlaying == true) {
-                            _playState.value = PlayState.PLAYING
-                            _errorInfo.value = null
-                        } else {
-                            _playState.value = PlayState.PAUSED
-                        }
+                        if (controller?.isPlaying == true) { _playState.value = PlayState.PLAYING; _errorInfo.value = null }
+                        else _playState.value = PlayState.PAUSED
                         updateProgress()
                     }
                     Player.STATE_ENDED -> handleSongEnded()
-                    Player.STATE_IDLE -> {
-                        if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
-                    }
+                    Player.STATE_IDLE -> if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
                 }
             }
-
             override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (isPlaying) {
-                    _playState.value = PlayState.PLAYING
-                    updateProgress()
-                } else if (controller?.playbackState == Player.STATE_READY) {
-                    _playState.value = PlayState.PAUSED
-                }
+                if (isPlaying) { _playState.value = PlayState.PLAYING; updateProgress() }
+                else if (controller?.playbackState == Player.STATE_READY) _playState.value = PlayState.PAUSED
             }
-
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 addLog("ERROR: ${error.message}")
-                _errorInfo.value = ErrorInfo(error.message ?: "Error de reproduccion", currentSource?.type)
+                _errorInfo.value = ErrorInfo(error.message ?: "Error", currentSource?.type)
             }
         })
     }
@@ -182,332 +131,150 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private fun handleSongEnded() {
         when (_repeatMode.value) {
             RepeatMode.ONE -> { controller?.seekTo(0); controller?.play() }
-            RepeatMode.ALL -> {
-                if (_currentPlaylist.value.isEmpty()) _playState.value = PlayState.STOPPED
-                else if (_currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong()
-                else playSongAt(0)
-            }
-            RepeatMode.OFF -> {
-                if (_currentPlaylist.value.isNotEmpty() && _currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong()
+            RepeatMode.ALL -> if (_currentPlaylist.value.isEmpty()) _playState.value = PlayState.STOPPED
+                else if (_currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong() else playSongAt(0)
+            RepeatMode.OFF -> if (_currentPlaylist.value.isNotEmpty() && _currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong()
                 else _playState.value = PlayState.STOPPED
-            }
         }
     }
 
-    private fun addLog(message: String) {
-        val timestamp = System.currentTimeMillis()
-        _debugLog.value = (_debugLog.value + "[$timestamp] $message").takeLast(50)
-    }
-
-    private fun flash(message: String) {
-        _recMessage.value = message
-        viewModelScope.launch {
-            delay(2000)
-            _recMessage.value = null
-        }
-    }
+    private fun addLog(m: String) { _debugLog.value = (_debugLog.value + "[${System.currentTimeMillis()}] $m").takeLast(50) }
+    private fun flash(m: String) { _recMessage.value = m; viewModelScope.launch { delay(2000); _recMessage.value = null } }
 
     fun togglePlayPause() {
         if (_isLidOpen.value) return
-        val player = controller ?: return
-        if (player.isPlaying) {
-            player.pause()
-            _playState.value = PlayState.PAUSED
-        } else {
-            if (player.playbackState == Player.STATE_IDLE || currentSource == null) {
-                viewModelScope.launch { loadNextSource() }
-            } else {
-                player.play()
-                _playState.value = PlayState.PLAYING
-            }
+        val p = controller ?: return
+        if (p.isPlaying) { p.pause(); _playState.value = PlayState.PAUSED }
+        else {
+            if (p.playbackState == Player.STATE_IDLE || currentSource == null) viewModelScope.launch { loadNextSource() }
+            else { p.play(); _playState.value = PlayState.PLAYING }
         }
     }
 
-    fun pauseForTv() {
-        controller?.pause()
-        _playState.value = PlayState.PAUSED
-    }
-
-    fun stop() {
-        controller?.stop()
-        controller?.clearMediaItems()
-        _playState.value = PlayState.STOPPED
-        _cassette.value = _cassette.value.copy(progress = 0f)
-        currentSource = null
-    }
-
+    fun pauseForTv() { controller?.pause(); _playState.value = PlayState.PAUSED }
+    fun stop() { controller?.stop(); controller?.clearMediaItems(); _playState.value = PlayState.STOPPED; _cassette.value = _cassette.value.copy(progress = 0f); currentSource = null }
     fun recordCurrentTrack() {
         viewModelScope.launch {
             val song = _currentPlaylist.value.getOrNull(_currentSongIndex.value)
-            if (song == null) {
-                flash("Nada sonando para grabar")
-                return@launch
-            }
+            if (song == null) { flash("Nada sonando para grabar"); return@launch }
             val existing = allPlaylists.value.firstOrNull { it.name == REC_PLAYLIST }
-            val playlistId = existing?.id
-                ?: playlistDao.insertPlaylist(Playlist(name = REC_PLAYLIST))
-            addSongToPlaylist(playlistId, song)
+            val pid = existing?.id ?: playlistDao.insertPlaylist(Playlist(name = REC_PLAYLIST))
+            addSongToPlaylist(pid, song)
             flash("● Grabado: ${song.title}")
-            addLog("REC: ${song.title} -> $REC_PLAYLIST")
         }
     }
 
-    // Inserta un resultado de busqueda como SIGUIENTE en la cola
     fun queueNextFromSearch(result: SearchResult) {
-        val song = Song(
-            url = "",
-            title = result.title,
-            artist = result.artist,
-            thumbnailUrl = result.thumbnailUrl,
-            videoUrl = "https://www.youtube.com/watch?v=${result.videoId}"
-        )
-        val insertAt = (_currentSongIndex.value + 1).coerceAtMost(_currentPlaylist.value.size)
-        val newList = _currentPlaylist.value.toMutableList()
-        newList.add(insertAt, song)
-        _currentPlaylist.value = newList
+        val song = Song(url = "", title = result.title, artist = result.artist, thumbnailUrl = result.thumbnailUrl,
+            videoUrl = "https://www.youtube.com/watch?v=${result.videoId}")
+        val at = (_currentSongIndex.value + 1).coerceAtMost(_currentPlaylist.value.size)
+        val list = _currentPlaylist.value.toMutableList(); list.add(at, song); _currentPlaylist.value = list
         flash("● '${result.title}' quedo como siguiente")
     }
 
-    fun rewind() {
-        val player = controller ?: return
-        player.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
-    }
-
-    fun fastForward() {
-        val player = controller ?: return
-        val duration = player.duration
-        if (duration > 0) player.seekTo((player.currentPosition + 10000).coerceAtMost(duration))
-    }
-
+    fun rewind() { controller?.let { it.seekTo((it.currentPosition - 10000).coerceAtLeast(0)) } }
+    fun fastForward() { controller?.let { val d = it.duration; if (d > 0) it.seekTo((it.currentPosition + 10000).coerceAtMost(d)) } }
     fun toggleCalibration() { _calibrationMode.value = !_calibrationMode.value }
-
     fun setLocalUri(uri: Uri) { localUri = uri }
 
     fun search(query: String) {
         if (query.isBlank()) return
         viewModelScope.launch {
-            _isSearching.value = true
-            _searchError.value = null
-            val outcome = searchManager.search(query)
-            _searchResults.value = outcome.results
-            _searchError.value = outcome.error
-            _isSearching.value = false
-            addLog("Search '${query}': ${outcome.results.size} resultados")
+            _isSearching.value = true; _searchError.value = null
+            val o = searchManager.search(query)
+            _searchResults.value = o.results; _searchError.value = o.error; _isSearching.value = false
         }
     }
 
     fun playSearchResult(result: SearchResult) {
         viewModelScope.launch {
             val audioUrl = PipedResolver.resolveAudioUrl(result.videoId)
-            if (audioUrl == null) {
-                _errorInfo.value = ErrorInfo("No se pudo obtener el audio de YouTube (todas las vias fallaron)", SourceType.YOUTUBE)
-                _showSearchScreen.value = false
-                return@launch
-            }
-            val song = Song(
-                url = audioUrl,
-                title = result.title,
-                artist = result.artist,
-                thumbnailUrl = result.thumbnailUrl,
-                videoUrl = "https://www.youtube.com/watch?v=${result.videoId}"
-            )
-            val songId = songDao.insertSong(song)
-            val savedSong = song.copy(id = songId)
-            _currentPlaylist.value = listOf(savedSong)
-            _currentSongIndex.value = 0
-            _currentVideoUrl.value = savedSong.videoUrl
+            if (audioUrl == null) { _errorInfo.value = ErrorInfo("No se pudo obtener el audio", SourceType.YOUTUBE); _showSearchScreen.value = false; return@launch }
+            val song = Song(url = audioUrl, title = result.title, artist = result.artist, thumbnailUrl = result.thumbnailUrl,
+                videoUrl = "https://www.youtube.com/watch?v=${result.videoId}")
+            val id = songDao.insertSong(song); val saved = song.copy(id = id)
+            _currentPlaylist.value = listOf(saved); _currentSongIndex.value = 0
+            _currentVideoUrl.value = saved.videoUrl
             _cassette.value = _cassette.value.copy(sourceLabel = result.sourceLabel)
-            playSongAt(0)
-            _showSearchScreen.value = false
+            playSongAt(0); _showSearchScreen.value = false
         }
     }
 
-    fun playPlaylistSongs(songs: List<Song>) {
-        if (songs.isEmpty()) return
-        _currentPlaylist.value = songs
-        _currentSongIndex.value = 0
-        playSongAt(0)
-        _showPlaylistScreen.value = false
-    }
+    fun playPlaylistSongs(songs: List<Song>) { if (songs.isEmpty()) return; _currentPlaylist.value = songs; _currentSongIndex.value = 0; playSongAt(0); _showPlaylistScreen.value = false }
+    fun playNextSong() { if (_currentPlaylist.value.isEmpty()) return; playSongAt(if (_isShuffleEnabled.value) (0 until _currentPlaylist.value.size).random() else (_currentSongIndex.value + 1) % _currentPlaylist.value.size) }
+    fun playPreviousSong() { if (_currentPlaylist.value.isEmpty()) return; playSongAt(if (_currentSongIndex.value > 0) _currentSongIndex.value - 1 else _currentPlaylist.value.size - 1) }
 
-    fun playNextSong() {
-        if (_currentPlaylist.value.isEmpty()) return
-        val nextIndex = if (_isShuffleEnabled.value) {
-            (0 until _currentPlaylist.value.size).random()
-        } else {
-            (_currentSongIndex.value + 1) % _currentPlaylist.value.size
-        }
-        playSongAt(nextIndex)
-    }
-
-    fun playPreviousSong() {
-        if (_currentPlaylist.value.isEmpty()) return
-        val prevIndex = if (_currentSongIndex.value > 0) _currentSongIndex.value - 1
-        else _currentPlaylist.value.size - 1
-        playSongAt(prevIndex)
+    // Cambios de pista para el MODO TV/YouTube (sin reproducir en el service)
+    fun tvNext() { if (_currentPlaylist.value.isEmpty()) return; updateCurrentForTv(if (_isShuffleEnabled.value) (0 until _currentPlaylist.value.size).random() else (_currentSongIndex.value + 1) % _currentPlaylist.value.size) }
+    fun tvPrev() { if (_currentPlaylist.value.isEmpty()) return; updateCurrentForTv(if (_currentSongIndex.value > 0) _currentSongIndex.value - 1 else _currentPlaylist.value.size - 1) }
+    private fun updateCurrentForTv(index: Int) {
+        val song = _currentPlaylist.value[index]
+        _currentSongIndex.value = index
+        _currentVideoUrl.value = song.videoUrl
+        _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
     }
 
     private fun playSongAt(index: Int) {
         if (index < 0 || index >= _currentPlaylist.value.size) return
         viewModelScope.launch {
-            val song = _currentPlaylist.value[index]
-            _currentSongIndex.value = index
-
+            val song = _currentPlaylist.value[index]; _currentSongIndex.value = index
             var playUrl = song.url
-            val videoId = extractVideoId(song.videoUrl)
-            if (videoId != null) {
-                // Si la URL guardada esta vacia o es de YouTube, resolver (usa cache si esta fresca)
-                val resolved = PipedResolver.resolveAudioUrl(videoId)
-                if (resolved != null) {
-                    playUrl = resolved
-                    val updated = song.copy(url = resolved)
-                    val newList = _currentPlaylist.value.toMutableList()
-                    newList[index] = updated
-                    _currentPlaylist.value = newList
-                } else if (playUrl.isEmpty()) {
-                    _errorInfo.value = ErrorInfo("No se pudo resolver audio para '${song.title}'", SourceType.YOUTUBE)
-                    return@launch
-                }
+            val vid = extractVideoId(song.videoUrl)
+            if (vid != null) {
+                val r = PipedResolver.resolveAudioUrl(vid)
+                if (r != null) { playUrl = r; val nl = _currentPlaylist.value.toMutableList(); nl[index] = song.copy(url = r); _currentPlaylist.value = nl }
+                else if (playUrl.isEmpty()) { _errorInfo.value = ErrorInfo("No se pudo resolver audio", SourceType.YOUTUBE); return@launch }
             }
-
             _currentVideoUrl.value = song.videoUrl
-            currentSource = AudioSource(
-                url = playUrl,
-                type = SourceType.YOUTUBE,
-                title = song.title,
-                artist = song.artist
-            )
-            _cassette.value = _cassette.value.copy(
-                title = song.title,
-                artist = song.artist,
-                progress = 0f
-            )
-
-            val mediaItem = MediaItem.Builder()
-                .setUri(playUrl)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(song.title)
-                        .setArtist(song.artist)
-                        .build()
-                )
-                .build()
-
-            controller?.setMediaItem(mediaItem)
-            controller?.prepare()
-            controller?.play()
+            currentSource = AudioSource(url = playUrl, type = SourceType.YOUTUBE, title = song.title, artist = song.artist)
+            _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
+            controller?.setMediaItem(MediaItem.Builder().setUri(playUrl).setMediaMetadata(MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).build()).build())
+            controller?.prepare(); controller?.play()
         }
     }
 
     private fun extractVideoId(url: String?): String? {
         if (url == null) return null
-        return try {
-            when {
-                url.contains("watch?v=") -> url.substringAfter("watch?v=").substringBefore("&")
-                url.contains("youtu.be/") -> url.substringAfter("youtu.be/").substringBefore("?")
-                else -> null
-            }
-        } catch (e: Exception) { null }
+        return when {
+            url.contains("watch?v=") -> url.substringAfter("watch?v=").substringBefore("&")
+            url.contains("youtu.be/") -> url.substringAfter("youtu.be/").substringBefore("?")
+            else -> null
+        }
     }
 
     fun toggleShuffle() { _isShuffleEnabled.value = !_isShuffleEnabled.value }
-
-    fun cycleRepeatMode() {
-        _repeatMode.value = when (_repeatMode.value) {
-            RepeatMode.OFF -> RepeatMode.ALL
-            RepeatMode.ALL -> RepeatMode.ONE
-            RepeatMode.ONE -> RepeatMode.OFF
-        }
-    }
-
-    fun toggleFavorite(song: Song) {
-        viewModelScope.launch { songDao.updateFavorite(song.id, !song.isFavorite) }
-    }
-
-    fun playlistSongs(playlistId: Long): Flow<List<Song>> = playlistDao.getSongsInPlaylist(playlistId)
-
-    fun createPlaylist(name: String) {
-        viewModelScope.launch { playlistDao.insertPlaylist(Playlist(name = name)) }
-    }
-
-    fun renamePlaylist(playlist: Playlist, newName: String) {
-        viewModelScope.launch { playlistDao.updatePlaylist(playlist.copy(name = newName)) }
-    }
-
-    fun deletePlaylist(playlist: Playlist) {
-        viewModelScope.launch {
-            playlistDao.deletePlaylistSongs(playlist.id)
-            playlistDao.deletePlaylist(playlist)
-        }
-    }
-
-    fun addSongToPlaylist(playlistId: Long, song: Song) {
-        viewModelScope.launch {
-            val songId = if (song.id == 0L) songDao.insertSong(song) else song.id
-            val position = playlistDao.countSongs(playlistId)
-            playlistDao.insertPlaylistSongCrossRef(
-                PlaylistSongCrossRef(playlistId = playlistId, songId = songId, position = position)
-            )
-        }
-    }
-
-    fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
-        viewModelScope.launch { playlistDao.removeSongFromPlaylist(playlistId, songId) }
-    }
-
-    fun savePlaylistOrder(playlistId: Long, songIds: List<Long>) {
-        viewModelScope.launch {
-            songIds.forEachIndexed { index, songId ->
-                playlistDao.updatePosition(playlistId, songId, index)
-            }
-        }
-    }
-
+    fun cycleRepeatMode() { _repeatMode.value = when (_repeatMode.value) { RepeatMode.OFF -> RepeatMode.ALL; RepeatMode.ALL -> RepeatMode.ONE; RepeatMode.ONE -> RepeatMode.OFF } }
+    fun toggleFavorite(song: Song) { viewModelScope.launch { songDao.updateFavorite(song.id, !song.isFavorite) } }
+    fun playlistSongs(pid: Long): Flow<List<Song>> = playlistDao.getSongsInPlaylist(pid)
+    fun createPlaylist(name: String) { viewModelScope.launch { playlistDao.insertPlaylist(Playlist(name = name)) } }
+    fun renamePlaylist(p: Playlist, n: String) { viewModelScope.launch { playlistDao.updatePlaylist(p.copy(name = n)) } }
+    fun deletePlaylist(p: Playlist) { viewModelScope.launch { playlistDao.deletePlaylistSongs(p.id); playlistDao.deletePlaylist(p) } }
+    fun addSongToPlaylist(pid: Long, song: Song) { viewModelScope.launch { val sid = if (song.id == 0L) songDao.insertSong(song) else song.id; playlistDao.insertPlaylistSongCrossRef(PlaylistSongCrossRef(pid, sid, playlistDao.countSongs(pid))) } }
+    fun removeSongFromPlaylist(pid: Long, sid: Long) { viewModelScope.launch { playlistDao.removeSongFromPlaylist(pid, sid) } }
+    fun savePlaylistOrder(pid: Long, ids: List<Long>) { viewModelScope.launch { ids.forEachIndexed { i, sid -> playlistDao.updatePosition(pid, sid, i) } } }
     fun toggleSearchScreen() { _showSearchScreen.value = !_showSearchScreen.value }
     fun togglePlaylistScreen() { _showPlaylistScreen.value = !_showPlaylistScreen.value }
     fun toggleLoginScreen() { _showLoginScreen.value = !_showLoginScreen.value }
 
     private suspend fun loadNextSource() {
-        val nextSource = sourceManager.getNextSource(currentSource, localUri)
-        if (nextSource != null) {
-            currentSource = nextSource
-            _cassette.value = _cassette.value.copy(
-                title = nextSource.title,
-                artist = nextSource.artist,
-                progress = 0f
-            )
-            val mediaItem = MediaItem.Builder()
-                .setUri(nextSource.url)
-                .setMediaMetadata(
-                    MediaMetadata.Builder()
-                        .setTitle(nextSource.title)
-                        .setArtist(nextSource.artist)
-                        .build()
-                )
-                .build()
-            controller?.setMediaItem(mediaItem)
-            controller?.prepare()
-            controller?.play()
-        } else {
-            _playState.value = PlayState.ERROR
-        }
+        val n = sourceManager.getNextSource(currentSource, localUri)
+        if (n != null) {
+            currentSource = n
+            _cassette.value = _cassette.value.copy(title = n.title, artist = n.artist, progress = 0f)
+            controller?.setMediaItem(MediaItem.Builder().setUri(n.url).setMediaMetadata(MediaMetadata.Builder().setTitle(n.title).setArtist(n.artist).build()).build())
+            controller?.prepare(); controller?.play()
+        } else _playState.value = PlayState.ERROR
     }
 
     private fun updateProgress() {
         viewModelScope.launch {
             while (_playState.value == PlayState.PLAYING) {
-                val player = controller ?: break
-                if (player.duration > 0) {
-                    val progress = player.currentPosition.toFloat() / player.duration.toFloat()
-                    _cassette.value = _cassette.value.copy(progress = progress)
-                }
+                val p = controller ?: break
+                if (p.duration > 0) _cassette.value = _cassette.value.copy(progress = p.currentPosition.toFloat() / p.duration)
                 delay(100)
             }
         }
     }
 
-    override fun onCleared() {
-        controllerFuture?.let { MediaController.releaseFuture(it) }
-        super.onCleared()
-    }
+    override fun onCleared() { controllerFuture?.let { MediaController.releaseFuture(it) }; super.onCleared() }
 }
