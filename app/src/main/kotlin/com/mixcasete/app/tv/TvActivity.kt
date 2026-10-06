@@ -47,11 +47,15 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.mixcasete.app.audio.VideoResolver
+import com.mixcasete.app.audio.VideoStream
 import com.mixcasete.app.ui.components.EmbedFallback
 import kotlinx.coroutines.delay
 
@@ -74,13 +78,12 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
     val context = LocalContext.current
     var showControls by remember { mutableStateOf(true) }
     var showConnect by remember { mutableStateOf(false) }
-    var videoStreamUrl by remember { mutableStateOf<String?>(null) }
+    var stream by remember { mutableStateOf<VideoStream?>(null) }
     var resolving by remember { mutableStateOf(true) }
 
     LaunchedEffect(showControls) { if (showControls) { delay(3000); showControls = false } }
     LaunchedEffect(videoUrl) {
-        val id = extractId(videoUrl)
-        videoStreamUrl = id?.let { VideoResolver.resolveProgressiveVideoUrl(it) }
+        stream = extractId(videoUrl)?.let { VideoResolver.resolve(it) }
         resolving = false
     }
 
@@ -90,8 +93,19 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
             .build()
     }
     DisposableEffect(Unit) { onDispose { exo.release() } }
-    LaunchedEffect(videoStreamUrl) {
-        videoStreamUrl?.let { exo.setMediaItem(MediaItem.fromUri(it)); exo.prepare(); exo.playWhenReady = true }
+
+    LaunchedEffect(stream) {
+        val s = stream ?: return@LaunchedEffect
+        val factory = DefaultDataSource.Factory(context)
+        if (s.progressiveUrl != null) {
+            exo.setMediaItem(MediaItem.fromUri(s.progressiveUrl))
+        } else if (s.videoUrl != null && s.audioUrl != null) {
+            val video = ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(s.videoUrl))
+            val audio = ProgressiveMediaSource.Factory(factory).createMediaSource(MediaItem.fromUri(s.audioUrl))
+            exo.setMediaSource(MergingMediaSource(video, audio))
+        } else return@LaunchedEffect
+        exo.prepare()
+        exo.playWhenReady = true
     }
 
     Box(
@@ -101,7 +115,7 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
         val vid = extractId(videoUrl)
         when {
             resolving -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF81C784)) }
-            videoStreamUrl != null -> AndroidView(
+            stream != null && stream!!.playable -> AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
                     PlayerView(ctx).apply {
