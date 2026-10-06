@@ -23,11 +23,13 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,12 +42,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.viewmodel.compose.viewModel
-import com.mixcasete.app.audio.AudioPlayerViewModel
-import com.mixcasete.app.ui.components.OfficialPlayer
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import com.mixcasete.app.audio.VideoResolver
+import com.mixcasete.app.ui.components.EmbedFallback
 import kotlinx.coroutines.delay
 
 class TvActivity : ComponentActivity() {
@@ -58,26 +65,57 @@ class TvActivity : ComponentActivity() {
         val c = WindowInsetsControllerCompat(window, window.decorView)
         c.hide(WindowInsetsCompat.Type.systemBars())
         c.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        val videoUrl = intent.getStringExtra("videoUrl")
-        setContent { TvScreen(videoUrl = videoUrl, onExit = { finish() }) }
+        setContent { TvScreen(videoUrl = intent.getStringExtra("videoUrl"), onExit = { finish() }) }
     }
 }
 
 @Composable
 fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
     val context = LocalContext.current
-    val viewModel: AudioPlayerViewModel = viewModel()
     var showControls by remember { mutableStateOf(true) }
     var showConnect by remember { mutableStateOf(false) }
+    var videoStreamUrl by remember { mutableStateOf<String?>(null) }
+    var resolving by remember { mutableStateOf(true) }
 
-    LaunchedEffect(Unit) { viewModel.playExternalVideoUrl(videoUrl) }
     LaunchedEffect(showControls) { if (showControls) { delay(3000); showControls = false } }
+    LaunchedEffect(videoUrl) {
+        val id = extractId(videoUrl)
+        videoStreamUrl = id?.let { VideoResolver.resolveProgressiveVideoUrl(it) }
+        resolving = false
+    }
+
+    val exo = remember {
+        ExoPlayer.Builder(context)
+            .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(30_000, 60_000, 5_000, 8_000).build())
+            .build()
+    }
+    DisposableEffect(Unit) { onDispose { exo.release() } }
+    LaunchedEffect(videoStreamUrl) {
+        videoStreamUrl?.let { exo.setMediaItem(MediaItem.fromUri(it)); exo.prepare(); exo.playWhenReady = true }
+    }
 
     Box(
         modifier = Modifier.fillMaxSize().background(Color.Black)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = { showControls = true })
     ) {
-        OfficialPlayer(viewModel = viewModel, modifier = Modifier.fillMaxSize())
+        val vid = extractId(videoUrl)
+        when {
+            resolving -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = Color(0xFF81C784)) }
+            videoStreamUrl != null -> AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        player = exo; useController = false
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setBackgroundColor(0xFF000000.toInt())
+                    }
+                }
+            )
+            vid != null -> EmbedFallback(videoId = vid, modifier = Modifier.fillMaxSize())
+            else -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Sin video disponible", color = Color(0xFF888888), fontSize = 14.sp)
+            }
+        }
 
         if (showControls) {
             IconButton(onClick = onExit, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).size(40.dp).clip(CircleShape).background(Color.Black.copy(alpha = 0.5f))) {
@@ -109,4 +147,13 @@ fun TvScreen(videoUrl: String?, onExit: () -> Unit) {
 private fun launchSystemSettings(context: android.content.Context, action: String) {
     try { context.startActivity(android.content.Intent(action)) }
     catch (e: Exception) { try { context.startActivity(android.content.Intent(Settings.ACTION_DISPLAY_SETTINGS)) } catch (e2: Exception) {} }
+}
+
+private fun extractId(url: String?): String? {
+    if (url == null) return null
+    return when {
+        url.contains("watch?v=") -> url.substringAfter("watch?v=").substringBefore("&")
+        url.contains("youtu.be/") -> url.substringAfter("youtu.be/").substringBefore("?")
+        else -> null
+    }
 }
