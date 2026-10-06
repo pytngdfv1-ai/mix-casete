@@ -9,7 +9,7 @@ import java.net.URL
 /**
  * Resuelve una URL de VIDEO PROGRESIVO (video+audio juntos, mp4) para ExoPlayer.
  * Usa Invidious formatStreams (itag 18/22 = mp4 progresivo con audio).
- * Prefiere 360p para reducir bitrate y evitar entrecorte en Miracast.
+ * Prefiere 720p para mejor calidad. Fallback: 1080p, 480p, 360p.
  */
 object VideoResolver {
 
@@ -37,9 +37,8 @@ object VideoResolver {
                 val json = JSONObject(connection.inputStream.bufferedReader().readText())
                 val formats = json.optJSONArray("formatStreams") ?: continue
 
-                // Buscar mp4 progresivo; preferir 360p, si no el de menor altura (menos bitrate)
-                var bestUrl: String? = null
-                var bestHeight = Int.MAX_VALUE
+                // Agrupar streams por calidad
+                val byHeight = mutableMapOf<Int, String>()  // height -> url
                 var fallbackUrl: String? = null
 
                 for (i in 0 until formats.length()) {
@@ -49,20 +48,24 @@ object VideoResolver {
                     val type = f.optString("type", "")
                     if (!type.contains("video/mp4", ignoreCase = true)) continue
                     val quality = f.optString("quality", "")
-                    val height = quality.removeSuffix("p").toIntOrNull() ?: 0
+                    val height = quality.removeSuffix("p").toIntOrNull() ?: continue
 
                     if (fallbackUrl == null) fallbackUrl = url
-                    if (height == 360) {
-                        return@withContext url
-                    }
-                    if (height in 144..480 && height < bestHeight) {
-                        bestHeight = height
-                        bestUrl = url
-                    }
+                    byHeight[height] = url
                 }
 
-                val result = bestUrl ?: fallbackUrl
-                if (result != null) return@withContext result
+                // Preferencia: 720p > 1080p > 480p > 360p > cualquiera disponible
+                val preferred = listOf(720, 1080, 480, 360)
+                for (h in preferred) {
+                    byHeight[h]?.let { return@withContext it }
+                }
+
+                // Fallback: el de mayor altura disponible (hasta 1080p para no saturar Miracast)
+                val under1080 = byHeight.filterKeys { it <= 1080 }
+                val best = under1080.maxByOrNull { it.key }?.value
+                if (best != null) return@withContext best
+
+                if (fallbackUrl != null) return@withContext fallbackUrl
             } catch (e: Exception) {
                 continue
             }
