@@ -4,6 +4,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -43,44 +44,42 @@ object PipedResolver {
         cache[videoId]?.let { (ts, url) ->
             if (System.currentTimeMillis() - ts < CACHE_TTL_MS) return url
         }
-
-        val resolved = withContext(Dispatchers.IO) {
-            coroutineScope {
-                val channel = Channel<String?>(Channel.UNLIMITED)
-                val jobs = mutableListOf<Job>()
-
-                jobs.add(launch { channel.send(safe { viaNewPipe(videoId) }) })
-                jobs.add(launch { channel.send(safe { viaPiped(videoId) }) })
-                jobs.add(launch { channel.send(safe { viaInvidious(videoId) }) })
-
-                var result: String? = null
-                var terminadas = 0
-                val total = jobs.size
-
-                withTimeoutOrNull(GLOBAL_TIMEOUT_MS) {
-                    while (terminadas < total && result == null) {
-                        val r = channel.receive()
-                        terminadas++
-                        if (r != null) result = r
-                    }
-                    result
-                }.also {
-                    jobs.forEach { j -> j.cancel() }
-                }
-            }
+        var resolved = attempt(videoId)
+        if (resolved == null) {
+            delay(1200)
+            resolved = attempt(videoId)
         }
-
         if (resolved != null) cache[videoId] = System.currentTimeMillis() to resolved
         return resolved
     }
 
-    private inline fun safe(block: () -> String?): String? {
-        return try { block() } catch (e: Exception) { null }
+    private suspend fun attempt(videoId: String): String? = withContext(Dispatchers.IO) {
+        coroutineScope {
+            val channel = Channel<String?>(Channel.UNLIMITED)
+            val jobs = mutableListOf<Job>()
+            jobs.add(launch { channel.send(safe { viaInvidious(videoId) }) })
+            jobs.add(launch { channel.send(safe { viaPiped(videoId) }) })
+            jobs.add(launch { channel.send(safe { viaNewPipe(videoId) }) })
+
+            var result: String? = null
+            var terminadas = 0
+            val total = jobs.size
+
+            withTimeoutOrNull(GLOBAL_TIMEOUT_MS) {
+                while (terminadas < total && result == null) {
+                    val r = channel.receive()
+                    terminadas++
+                    if (r != null) result = r
+                }
+                result
+            }.also { jobs.forEach { j -> j.cancel() } }
+        }
     }
 
+    private inline fun safe(block: () -> String?): String? = try { block() } catch (e: Exception) { null }
+
     private fun viaNewPipe(videoId: String): String? {
-        val watchUrl = "https://www.youtube.com/watch?v=$videoId"
-        val extractor = ServiceList.YouTube.getStreamExtractor(watchUrl)
+        val extractor = ServiceList.YouTube.getStreamExtractor("https://www.youtube.com/watch?v=$videoId")
         extractor.fetchPage()
         val info = StreamInfo.getInfo(extractor)
         return (info.audioStreams.maxByOrNull { it.bitrate } ?: info.audioStreams.firstOrNull())?.content
@@ -89,14 +88,12 @@ object PipedResolver {
     private fun viaPiped(videoId: String): String? {
         for (instance in PIPED_INSTANCES) {
             val url = safe {
-                val connection = URL("$instance/streams/$videoId").openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.setRequestProperty("User-Agent", USER_AGENT)
-                if (connection.responseCode !in 200..299) null
+                val c = URL("$instance/streams/$videoId").openConnection() as HttpURLConnection
+                c.requestMethod = "GET"; c.connectTimeout = 5000; c.readTimeout = 5000
+                c.setRequestProperty("User-Agent", USER_AGENT)
+                if (c.responseCode !in 200..299) null
                 else {
-                    val json = JSONObject(connection.inputStream.bufferedReader().readText())
+                    val json = JSONObject(c.inputStream.bufferedReader().readText())
                     pickBest(json.optJSONArray("audioStreams") ?: return@safe null, "url", "bitrate", "mimeType")
                 }
             }
@@ -105,18 +102,18 @@ object PipedResolver {
         return null
     }
 
+    // Invidious: prioriza stream PROGRESIVO (mp4 video+audio); si no, audio adaptativo
     private fun viaInvidious(videoId: String): String? {
         for (instance in INVIDIOUS_INSTANCES) {
             val url = safe {
-                val connection = URL("$instance/api/v1/videos/$videoId").openConnection() as HttpURLConnection
-                connection.requestMethod = "GET"
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                connection.setRequestProperty("User-Agent", USER_AGENT)
-                if (connection.responseCode !in 200..299) null
+                val c = URL("$instance/api/v1/videos/$videoId").openConnection() as HttpURLConnection
+                c.requestMethod = "GET"; c.connectTimeout = 5000; c.readTimeout = 5000
+                c.setRequestProperty("User-Agent", USER_AGENT)
+                if (c.responseCode !in 200..299) null
                 else {
-                    val json = JSONObject(connection.inputStream.bufferedReader().readText())
-                    pickBest(json.optJSONArray("adaptiveFormats") ?: return@safe null, "url", "bitrate", "type")
+                    val json = JSONObject(c.inputStream.bufferedReader().readText())
+                    pickProgressive(json.optJSONArray("formatStreams"))
+                        ?: pickBest(json.optJSONArray("adaptiveFormats") ?: return@safe null, "url", "bitrate", "type")
                 }
             }
             if (url != null) return url
@@ -124,20 +121,35 @@ object PipedResolver {
         return null
     }
 
-    private fun pickBest(array: JSONArray, urlKey: String, bitrateKey: String, mimeKey: String): String? {
+    private fun pickProgressive(formats: JSONArray?): String? {
+        if (formats == null) return null
+        var bestUrl: String? = null
+        var bestHeight = Int.MAX_VALUE
+        var fallback: String? = null
+        for (i in 0 until formats.length()) {
+            val f = formats.optJSONObject(i) ?: continue
+            val url = f.optString("url", "")
+            if (url.isEmpty() || !url.startsWith("http")) continue
+            if (!f.optString("type", "").contains("video/mp4", true)) continue
+            val h = f.optString("quality", "").removeSuffix("p").toIntOrNull() ?: 0
+            if (fallback == null) fallback = url
+            if (h == 360) return url
+            if (h in 144..480 && h < bestHeight) { bestHeight = h; bestUrl = url }
+        }
+        return bestUrl ?: fallback
+    }
+
+    private fun pickBest(array: JSONArray?, urlKey: String, bitrateKey: String, mimeKey: String): String? {
+        if (array == null) return null
         var bestUrl: String? = null
         var bestBitrate = -1
         for (i in 0 until array.length()) {
             val item = array.optJSONObject(i) ?: continue
             val url = item.optString(urlKey, "")
             if (url.isEmpty() || !url.startsWith("http")) continue
-            val mime = item.optString(mimeKey, "")
-            if (!mime.contains("audio", ignoreCase = true)) continue
-            val bitrate = item.optInt(bitrateKey, 0)
-            if (bitrate > bestBitrate) {
-                bestBitrate = bitrate
-                bestUrl = url
-            }
+            if (!item.optString(mimeKey, "").contains("audio", true)) continue
+            val br = item.optInt(bitrateKey, 0)
+            if (br > bestBitrate) { bestBitrate = br; bestUrl = url }
         }
         return bestUrl
     }
