@@ -119,8 +119,9 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
         override fun onPlayerError(e: PlaybackException) {
             _errorInfo.value = ErrorInfo(e.message ?: "Error", currentSource?.type)
-            // Si la URL murio (403/firma expirada), re-resolver y reintentar hasta 2 veces
-            if (e.type == PlaybackException.TYPE_SOURCE && retryCount < 2) {
+            // Reintento automatico ante cualquier error (URL muerta, 403, timeout, firma expirada)
+            // hasta 2 veces. Si es permanente, se rinde y muestra el error al usuario.
+            if (retryCount < 2) {
                 retryCount++
                 viewModelScope.launch {
                     delay(1200)
