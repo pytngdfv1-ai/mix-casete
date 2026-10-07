@@ -93,12 +93,12 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentPlaylist by viewModel.currentPlaylist.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.collectAsState()
-    val ytState by YtBridge.state.collectAsState()
+    val activeId by YtBridge.activeId.collectAsState()   // <-- decide el montaje, no el WebView
 
     var videoFront by remember { mutableStateOf(false) }
     val flip by animateFloatAsState(if (videoFront) 1f else 0f, tween(400))
     val isFavorite = currentPlaylist.getOrNull(currentSongIndex)?.isFavorite ?: false
-    val hasVideo = ytState.videoId != null
+    val hasVideo = activeId != null
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(Color.Black),
@@ -111,12 +111,10 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
         else { val w = maxWidth * 0.96f; val h = maxHeight * 0.92f; bodyW = w; bodyH = if (h < w * 0.48f) h else w * 0.48f }
 
         Box(modifier = Modifier.width(bodyW).height(bodyH)) {
-            // CAPA 0: reproductor OFICIAL de YouTube (solo cuando hay tema)
             if (hasVideo) {
                 OfficialPlayer(modifier = Modifier.fillMaxSize())
             }
 
-            // CAPA 1: casete translucido encima (con flip)
             if (flip < 0.99f) {
                 Box(
                     Modifier.fillMaxSize().graphicsLayer {
@@ -139,7 +137,6 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 }
             }
 
-            // Icono casete para volver (cuando el video esta al frente)
             if (flip > 0.5f) {
                 IconButton(
                     onClick = { videoFront = false },
