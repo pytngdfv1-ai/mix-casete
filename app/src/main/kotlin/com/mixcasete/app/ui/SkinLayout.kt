@@ -35,13 +35,11 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
 import com.mixcasete.app.audio.AudioPlayerViewModel
-import com.mixcasete.app.audio.PlayerHolder
+import com.mixcasete.app.audio.YtBridge
 import com.mixcasete.app.ui.components.CassettePlayer
+import com.mixcasete.app.ui.components.OfficialPlayer
 import com.mixcasete.app.ui.screens.LoginContent
 import com.mixcasete.app.ui.screens.PlaylistContent
 import com.mixcasete.app.ui.screens.SearchContent
@@ -95,11 +93,12 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentPlaylist by viewModel.currentPlaylist.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.collectAsState()
-    val servicePlayer by PlayerHolder.player.collectAsState()
+    val ytState by YtBridge.state.collectAsState()
 
     var videoFront by remember { mutableStateOf(false) }
     val flip by animateFloatAsState(if (videoFront) 1f else 0f, tween(400))
     val isFavorite = currentPlaylist.getOrNull(currentSongIndex)?.isFavorite ?: false
+    val hasVideo = ytState.videoId != null
 
     BoxWithConstraints(
         modifier = Modifier.fillMaxSize().background(Color.Black),
@@ -112,28 +111,18 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
         else { val w = maxWidth * 0.96f; val h = maxHeight * 0.92f; bodyW = w; bodyH = if (h < w * 0.48f) h else w * 0.48f }
 
         Box(modifier = Modifier.width(bodyW).height(bodyH)) {
-            // CAPA 0: el video del tema, detras de todo
-            AndroidView(
-                modifier = Modifier.fillMaxSize(),
-                factory = { ctx ->
-                    PlayerView(ctx).apply {
-                        useController = false
-                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                        setBackgroundColor(0xFF000000.toInt())
-                    }
-                },
-                update = { pv -> pv.player = servicePlayer }
-            )
+            // CAPA 0: reproductor OFICIAL de YouTube (solo cuando hay tema)
+            if (hasVideo) {
+                OfficialPlayer(modifier = Modifier.fillMaxSize())
+            }
 
-            // CAPA 1: el casete translucido encima del video (con animacion de vuelta)
+            // CAPA 1: casete translucido encima (con flip)
             if (flip < 0.99f) {
                 Box(
-                    Modifier
-                        .fillMaxSize()
-                        .graphicsLayer {
-                            rotationY = flip * 90f
-                            alpha = 0.55f * (1f - flip)
-                        }
+                    Modifier.fillMaxSize().graphicsLayer {
+                        rotationY = flip * 90f
+                        alpha = 0.55f * (1f - flip)
+                    }
                 ) {
                     CassettePlayer(
                         zones = zones, playState = playState, isLidOpen = isLidOpen, cassette = cassette,
@@ -150,7 +139,7 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 }
             }
 
-            // Icono casete para volver (solo cuando el video esta al frente)
+            // Icono casete para volver (cuando el video esta al frente)
             if (flip > 0.5f) {
                 IconButton(
                     onClick = { videoFront = false },
