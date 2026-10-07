@@ -1,6 +1,7 @@
 package com.mixcasete.app.ui
 
-import android.content.Intent
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -15,8 +16,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Tv
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
@@ -29,19 +30,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
 import com.mixcasete.app.audio.AudioPlayerViewModel
-import com.mixcasete.app.tv.TvActivity
+import com.mixcasete.app.audio.PlayerHolder
 import com.mixcasete.app.ui.components.CassettePlayer
 import com.mixcasete.app.ui.screens.LoginContent
 import com.mixcasete.app.ui.screens.PlaylistContent
 import com.mixcasete.app.ui.screens.SearchContent
-import com.mixcasete.app.ui.screens.YouTubeLikeView
 import kotlin.math.roundToInt
 
 data class Zone(val x0: Float, val y0: Float, val x1: Float, val y1: Float) {
@@ -79,7 +82,6 @@ fun Modifier.fillZone(zone: Zone): Modifier = this.then(
 
 @Composable
 fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
-    val context = LocalContext.current
     val playState by viewModel.playState.collectAsState()
     val isLidOpen by viewModel.isLidOpen.collectAsState()
     val cassette by viewModel.cassette.collectAsState()
@@ -93,47 +95,75 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentPlaylist by viewModel.currentPlaylist.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.collectAsState()
-    val currentVideoUrl by viewModel.currentVideoUrl.collectAsState()
+    val servicePlayer by PlayerHolder.player.collectAsState()
 
-    var youTubeMode by remember { mutableStateOf(false) }
+    var videoFront by remember { mutableStateOf(false) }
+    val flip by animateFloatAsState(if (videoFront) 1f else 0f, tween(400))
     val isFavorite = currentPlaylist.getOrNull(currentSongIndex)?.isFavorite ?: false
 
     BoxWithConstraints(
-        modifier = Modifier.fillMaxSize().background(Color(0xFF121212)),
+        modifier = Modifier.fillMaxSize().background(Color.Black),
         contentAlignment = Alignment.Center
     ) {
-        if (youTubeMode) {
-            YouTubeLikeView(viewModel = viewModel, onExit = { youTubeMode = false })
-        } else {
-            val isPortrait = maxHeight > maxWidth
-            val zones = if (isPortrait) portraitZones() else landscapeZones()
-            val bodyW: Dp; val bodyH: Dp
-            if (isPortrait) { val h = maxHeight * 0.88f; val w = maxWidth * 0.92f; bodyH = h; bodyW = if (w < h * 0.62f) w else h * 0.62f }
-            else { val w = maxWidth * 0.96f; val h = maxHeight * 0.92f; bodyW = w; bodyH = if (h < w * 0.48f) h else w * 0.48f }
+        val isPortrait = maxHeight > maxWidth
+        val zones = if (isPortrait) portraitZones() else landscapeZones()
+        val bodyW: Dp; val bodyH: Dp
+        if (isPortrait) { val h = maxHeight * 0.88f; val w = maxWidth * 0.92f; bodyH = h; bodyW = if (w < h * 0.62f) w else h * 0.62f }
+        else { val w = maxWidth * 0.96f; val h = maxHeight * 0.92f; bodyW = w; bodyH = if (h < w * 0.48f) h else w * 0.48f }
 
-            Box(modifier = Modifier.width(bodyW).height(bodyH)) {
-                CassettePlayer(
-                    zones = zones, playState = playState, isLidOpen = isLidOpen, cassette = cassette,
-                    calibrationMode = calibrationMode, errorInfo = errorInfo, recMessage = recMessage,
-                    isShuffle = isShuffle, repeatMode = repeatMode, isFavorite = isFavorite,
-                    onPlayPause = viewModel::togglePlayPause, onStop = viewModel::stop, onRecord = viewModel::recordCurrentTrack,
-                    onRewind = viewModel::rewind, onFastForward = viewModel::fastForward, onToggleCalibration = viewModel::toggleCalibration,
-                    onSearch = viewModel::toggleSearchScreen, onLists = viewModel::togglePlaylistScreen,
-                    onPrev = viewModel::playPreviousSong, onNext = viewModel::playNextSong,
-                    onShuffle = viewModel::toggleShuffle, onRepeat = viewModel::cycleRepeatMode,
-                    onFavorite = { currentPlaylist.getOrNull(currentSongIndex)?.let { viewModel.toggleFavorite(it) } },
-                    onShare = { viewModel.pauseForTv(); context.startActivity(Intent(context, TvActivity::class.java).putExtra("videoUrl", currentVideoUrl)) }
-                )
+        Box(modifier = Modifier.width(bodyW).height(bodyH)) {
+            // CAPA 0: el video del tema, detras de todo
+            AndroidView(
+                modifier = Modifier.fillMaxSize(),
+                factory = { ctx ->
+                    PlayerView(ctx).apply {
+                        useController = false
+                        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                        setBackgroundColor(0xFF000000.toInt())
+                    }
+                },
+                update = { pv -> pv.player = servicePlayer }
+            )
+
+            // CAPA 1: el casete translucido encima del video (con animacion de vuelta)
+            if (flip < 0.99f) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            rotationY = flip * 90f
+                            alpha = 0.55f * (1f - flip)
+                        }
+                ) {
+                    CassettePlayer(
+                        zones = zones, playState = playState, isLidOpen = isLidOpen, cassette = cassette,
+                        calibrationMode = calibrationMode, errorInfo = errorInfo, recMessage = recMessage,
+                        isShuffle = isShuffle, repeatMode = repeatMode, isFavorite = isFavorite,
+                        onPlayPause = viewModel::togglePlayPause, onStop = viewModel::stop, onRecord = viewModel::recordCurrentTrack,
+                        onRewind = viewModel::rewind, onFastForward = viewModel::fastForward, onToggleCalibration = viewModel::toggleCalibration,
+                        onSearch = viewModel::toggleSearchScreen, onLists = viewModel::togglePlaylistScreen,
+                        onPrev = viewModel::playPreviousSong, onNext = viewModel::playNextSong,
+                        onShuffle = viewModel::toggleShuffle, onRepeat = viewModel::cycleRepeatMode,
+                        onFavorite = { currentPlaylist.getOrNull(currentSongIndex)?.let { viewModel.toggleFavorite(it) } },
+                        onShowVideo = { videoFront = true }
+                    )
+                }
             }
 
-            IconButton(
-                onClick = { viewModel.pauseForTv(); youTubeMode = true },
-                modifier = Modifier.align(Alignment.TopStart).padding(8.dp).size(40.dp).clip(CircleShape).background(Color(0xFF3A3A3A))
-            ) { Icon(Icons.Filled.Tv, contentDescription = "Modo YouTube", tint = Color(0xFF81C784)) }
+            // Icono casete para volver (solo cuando el video esta al frente)
+            if (flip > 0.5f) {
+                IconButton(
+                    onClick = { videoFront = false },
+                    modifier = Modifier.align(Alignment.TopStart).padding(10.dp).size(44.dp)
+                        .clip(CircleShape).background(Color.Black.copy(alpha = 0.55f))
+                ) {
+                    Icon(Icons.Filled.Album, contentDescription = "Volver al casete", tint = Color(0xFF81C784))
+                }
+            }
         }
 
-        if (showSearch) OverlayPanel(isPortrait = maxHeight > maxWidth, onClose = viewModel::toggleSearchScreen) { SearchContent(viewModel) }
-        else if (showPlaylist) OverlayPanel(isPortrait = maxHeight > maxWidth, onClose = viewModel::togglePlaylistScreen) { PlaylistContent(viewModel) }
+        if (showSearch) OverlayPanel(isPortrait, onClose = viewModel::toggleSearchScreen) { SearchContent(viewModel) }
+        else if (showPlaylist) OverlayPanel(isPortrait, onClose = viewModel::togglePlaylistScreen) { PlaylistContent(viewModel) }
         if (showLogin) LoginContent(viewModel)
     }
 }
@@ -153,7 +183,7 @@ private fun OverlayPanel(isPortrait: Boolean, onClose: () -> Unit, content: @Com
         ) {
             Box(Modifier.fillMaxSize().padding(top = 40.dp)) { content() }
             IconButton(onClick = onClose, modifier = Modifier.align(Alignment.TopEnd).padding(6.dp).size(30.dp).clip(CircleShape).background(Color(0xFF3A3A3A))) {
-                Icon(Icons.Filled.Close, contentDescription = "Cerrar", tint = Color(0xFFD6D6D6), modifier = Modifier.size(16.dp))
+                Icon(Icons.Filled.Close, "Cerrar", tint = Color(0xFFD6D6D6), modifier = Modifier.size(16.dp))
             }
         }
     }
