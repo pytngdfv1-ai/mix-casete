@@ -9,7 +9,6 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -22,13 +21,12 @@ import com.mixcasete.app.audio.YtCmd
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
 fun OfficialPlayer(modifier: Modifier = Modifier) {
-    val state by YtBridge.state.collectAsState()
     var webView by remember { mutableStateOf<WebView?>(null) }
     val html = remember { buildHtml() }
 
     DisposableEffect(Unit) {
         onDispose {
-            if (YtBridge.controller != null) YtBridge.controller = null
+            YtBridge.controller = null
             webView?.destroy()
         }
     }
@@ -52,12 +50,7 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface fun onReady() { YtBridge.setState { it.copy(ready = true) } }
                     @JavascriptInterface fun onState(s: Int) {
-                        YtBridge.setState { st ->
-                            st.copy(
-                                isPlaying = s == 1,
-                                error = if (s == -1) st.error else null
-                            )
-                        }
+                        YtBridge.setState { st -> st.copy(isPlaying = s == 1, error = if (s == -1) st.error else null) }
                     }
                     @JavascriptInterface fun onTime(t: Double) { YtBridge.setState { it.copy(positionSec = t.toFloat()) } }
                     @JavascriptInterface fun onDur(d: Double) { YtBridge.setState { it.copy(durationSec = d.toFloat()) } }
@@ -73,6 +66,7 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                     override fun seek(sec: Float) { wv.evaluateJavascript("window.seekV&&seekV($sec)", null) }
                     override fun stop() { wv.evaluateJavascript("window.stopV&&stopV()", null) }
                 }
+                // Cargar el tema pendiente (el que se emitio antes de que el WebView existiera)
                 YtBridge.pendingId?.let { pid ->
                     YtBridge.pendingId = null
                     wv.post { YtBridge.controller?.load(pid) }
@@ -81,19 +75,17 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
         }
     )
 
+    // Comandos en vivo (cuando el WebView YA esta montado y cambia de tema, etc.)
     LaunchedEffect(Unit) {
         YtBridge.commands.collect { cmd ->
-            val c = YtBridge.controller
+            val c = YtBridge.controller ?: return@collect
             when (cmd) {
-                is YtCmd.Load -> {
-                    YtBridge.setState { it.copy(videoId = cmd.id, title = cmd.title, artist = cmd.artist, positionSec = 0f, durationSec = 0f, error = null) }
-                    if (c != null) c.load(cmd.id) else YtBridge.pendingId = cmd.id
-                }
-                YtCmd.Play -> c?.play()
-                YtCmd.Pause -> c?.pause()
-                YtCmd.Toggle -> { if (YtBridge.state.value.isPlaying) c?.pause() else c?.play() }
-                is YtCmd.Seek -> c?.seek(cmd.sec)
-                YtCmd.Stop -> { c?.stop(); YtBridge.setState { it.copy(videoId = null, isPlaying = false) } }
+                is YtCmd.Load -> { YtBridge.pendingId = null; c.load(cmd.id) }
+                YtCmd.Play -> c.play()
+                YtCmd.Pause -> c.pause()
+                YtCmd.Toggle -> { if (YtBridge.state.value.isPlaying) c.pause() else c.play() }
+                is YtCmd.Seek -> c.seek(cmd.sec)
+                YtCmd.Stop -> c.stop()
                 else -> {}
             }
         }
