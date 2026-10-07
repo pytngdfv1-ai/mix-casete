@@ -22,6 +22,7 @@ import com.mixcasete.app.audio.YtCmd
 @Composable
 fun OfficialPlayer(modifier: Modifier = Modifier) {
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var retried by remember { mutableStateOf(false) }
     val html = remember { buildHtml() }
 
     DisposableEffect(Unit) {
@@ -40,13 +41,23 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 cm.setAcceptThirdPartyCookies(this, true)
                 cm.setCookie(".youtube.com", "SOCS=CAI; path=/; secure")
                 cm.flush()
+
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.databaseEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = false
+                settings.loadsImagesAutomatically = true
+                settings.setSupportZoom(false)
+
+                // FIX CLAVE DEL 152: UA real del WebView SIN el marcador "; wv".
+                // Con "; wv" YouTube detecta WebView incrustado y rechaza el IFrame API.
+                val baseUA = settings.userAgentString
+                settings.userAgentString = baseUA.replace("; wv", "").trim()
+
                 webViewClient = WebViewClient()
                 webChromeClient = WebChromeClient()
                 setBackgroundColor(0xFF000000.toInt())
+
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface fun onReady() { YtBridge.setState { it.copy(ready = true) } }
                     @JavascriptInterface fun onState(s: Int) {
@@ -54,8 +65,16 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                     }
                     @JavascriptInterface fun onTime(t: Double) { YtBridge.setState { it.copy(positionSec = t.toFloat()) } }
                     @JavascriptInterface fun onDur(d: Double) { YtBridge.setState { it.copy(durationSec = d.toFloat()) } }
-                    @JavascriptInterface fun onErr(e: Int) { YtBridge.setState { it.copy(error = e, isPlaying = false) } }
+                    @JavascriptInterface fun onErr(e: Int) {
+                        YtBridge.setState { it.copy(error = e, isPlaying = false) }
+                        // Re-intento unico si el 152 fue transitorio (handshake caido)
+                        if (e == 152 && !retried) {
+                            retried = true
+                            postDelayed({ reload() }, 900)
+                        }
+                    }
                 }, "Android")
+
                 loadDataWithBaseURL("https://www.youtube.com/", html, "text/html", "utf-8", null)
                 webView = this
                 val wv = this
@@ -66,7 +85,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                     override fun seek(sec: Float) { wv.evaluateJavascript("window.seekV&&seekV($sec)", null) }
                     override fun stop() { wv.evaluateJavascript("window.stopV&&stopV()", null) }
                 }
-                // Cargar el tema pendiente (el que se emitio antes de que el WebView existiera)
                 YtBridge.pendingId?.let { pid ->
                     YtBridge.pendingId = null
                     wv.post { YtBridge.controller?.load(pid) }
@@ -75,12 +93,11 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
         }
     )
 
-    // Comandos en vivo (cuando el WebView YA esta montado y cambia de tema, etc.)
     LaunchedEffect(Unit) {
         YtBridge.commands.collect { cmd ->
             val c = YtBridge.controller ?: return@collect
             when (cmd) {
-                is YtCmd.Load -> { YtBridge.pendingId = null; c.load(cmd.id) }
+                is YtCmd.Load -> { YtBridge.pendingId = null; retried = false; c.load(cmd.id) }
                 YtCmd.Play -> c.play()
                 YtCmd.Pause -> c.pause()
                 YtCmd.Toggle -> { if (YtBridge.state.value.isPlaying) c.pause() else c.play() }
@@ -92,6 +109,8 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
     }
 }
 
+// Sin "origin" explicito: el origin efectivo lo aporta el baseURL (youtube.com),
+// y ponerlo igual al host provocaba mismatch -> 152.
 private fun buildHtml(): String = """
 <html><head><meta charset="utf-8"><style>
 html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
@@ -104,7 +123,7 @@ var player; var ready=false; var pendingId=null;
 function onYouTubeIframeAPIReady(){
   player=new YT.Player('player',{
     host:'https://www.youtube.com',
-    playerVars:{controls:0,rel:0,playsinline:1,modestbranding:1,iv_load_policy:3,origin:'https://www.youtube.com'},
+    playerVars:{controls:0,rel:0,playsinline:1,modestbranding:1,iv_load_policy:3},
     events:{
       onReady:function(){ ready=true; if(window.Android) Android.onReady(); if(pendingId){ player.loadVideoById(pendingId,0,'default'); pendingId=null; } },
       onStateChange:function(e){ if(window.Android) Android.onState(e.data); },
