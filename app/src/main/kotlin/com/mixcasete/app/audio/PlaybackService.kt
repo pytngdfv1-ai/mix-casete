@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -70,7 +71,8 @@ class PlaybackService : MediaSessionService() {
 
     private fun pi(action: String, req: Int): PendingIntent {
         val i = Intent(this, PlaybackService::class.java).setAction(action).putExtra("yt_action", action)
-        val fl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val fl = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M)
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         else PendingIntent.FLAG_UPDATE_CURRENT
         return PendingIntent.getService(this, req, i, fl)
     }
@@ -99,7 +101,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // Mantener el servicio/notificacion; el audio sigue mientras la app no se cierre del todo
+        // Mantener el servicio/notificacion
     }
 
     override fun onDestroy() {
@@ -110,6 +112,5 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    // MediaSessionService requiere esto; no usamos MediaSession real (el audio lo hace el WebView)
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = null
 }
