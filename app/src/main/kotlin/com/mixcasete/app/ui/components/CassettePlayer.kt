@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.QueueMusic
@@ -22,6 +21,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -79,20 +79,13 @@ fun CassettePlayer(
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
     onFavorite: () -> Unit,
-    onShare: () -> Unit
+    onShowVideo: () -> Unit
 ) {
     Box(Modifier.fillMaxSize()) {
-        Canvas(Modifier.fillMaxSize()) {
-            drawBody(zones)
-        }
+        Canvas(Modifier.fillMaxSize()) { drawBody(zones) }
 
-        zones.screen?.let {
-            LcdScreen(modifier = Modifier.fillZone(it), playState = playState, progress = cassette.progress)
-        }
-
-        zones.knobs?.let {
-            KnobsStrip(modifier = Modifier.fillZone(it))
-        }
+        zones.screen?.let { LcdScreen(modifier = Modifier.fillZone(it), playState = playState, progress = cassette.progress) }
+        zones.knobs?.let { KnobsStrip(modifier = Modifier.fillZone(it)) }
 
         CassetteWindow(
             modifier = Modifier.fillZone(zones.window),
@@ -103,81 +96,49 @@ fun CassettePlayer(
 
         FunctionBar(
             modifier = Modifier.fillZone(zones.functionBar),
-            isShuffle = isShuffle,
-            repeatMode = repeatMode,
-            isFavorite = isFavorite,
-            onSearch = onSearch,
-            onLists = onLists,
-            onPrev = onPrev,
-            onNext = onNext,
-            onShuffle = onShuffle,
-            onRepeat = onRepeat,
-            onFavorite = onFavorite
+            isShuffle = isShuffle, repeatMode = repeatMode, isFavorite = isFavorite,
+            onSearch = onSearch, onLists = onLists, onPrev = onPrev, onNext = onNext,
+            onShuffle = onShuffle, onRepeat = onRepeat, onFavorite = onFavorite
         )
 
         Keyboard(
             modifier = Modifier.fillZone(zones.keyboard),
             playState = playState,
-            onPlayPause = onPlayPause,
-            onStop = onStop,
-            onRecord = onRecord,
-            onRewind = onRewind,
-            onFastForward = onFastForward
+            onPlayPause = onPlayPause, onStop = onStop, onRecord = onRecord,
+            onRewind = onRewind, onFastForward = onFastForward
         )
 
+        // Icono VIDEO: da la vuelta al casete y muestra el video pleno
         IconButton(
-            onClick = onShare,
+            onClick = onShowVideo,
             modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).size(36.dp)
         ) {
-            Icon(Icons.Filled.Cast, contentDescription = "Compartir con TV", tint = ActiveGreen)
+            Icon(Icons.Filled.Videocam, contentDescription = "Ver video", tint = ActiveGreen)
         }
 
         recMessage?.let { msg ->
-            Text(
-                text = msg,
-                color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(8.dp)
+            Text(msg, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopCenter).padding(8.dp)
                     .background(Color(0xFFB71C1C).copy(alpha = 0.85f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            )
+                    .padding(horizontal = 8.dp, vertical = 4.dp))
         }
 
         errorInfo?.let { info ->
-            Text(
-                text = "ERROR: ${info.message.take(50)}",
-                color = Color.White,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(8.dp)
+            Text("ERROR: ${info.message.take(50)}", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold,
+                modifier = Modifier.align(Alignment.TopStart).padding(8.dp)
                     .background(Color.Red.copy(alpha = 0.8f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 8.dp, vertical = 4.dp)
-            )
+                    .padding(horizontal = 8.dp, vertical = 4.dp))
         }
 
-        Text(
-            text = "CALIB",
-            color = Color.Red,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(2.dp)
+        Text("CALIB", color = Color.Red, fontSize = 9.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.align(Alignment.TopEnd).padding(2.dp)
                 .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(3.dp))
                 .padding(horizontal = 6.dp, vertical = 2.dp)
-                .clickable { onToggleCalibration() }
-        )
+                .clickable { onToggleCalibration() })
 
         if (calibrationMode) {
             for ((name, zone) in zones.namedZones()) {
-                Box(Modifier.fillZone(zone).border(1.dp, Color.Red)) {
-                    Text(name, color = Color.Red, fontSize = 8.sp)
-                }
+                Box(Modifier.fillZone(zone).border(1.dp, Color.Red)) { Text(name, color = Color.Red, fontSize = 8.sp) }
             }
         }
     }
@@ -185,99 +146,54 @@ fun CassettePlayer(
 
 @Composable
 fun FunctionBar(
-    modifier: Modifier,
-    isShuffle: Boolean,
-    repeatMode: RepeatMode,
-    isFavorite: Boolean,
-    onSearch: () -> Unit,
-    onLists: () -> Unit,
-    onPrev: () -> Unit,
-    onNext: () -> Unit,
-    onShuffle: () -> Unit,
-    onRepeat: () -> Unit,
-    onFavorite: () -> Unit
+    modifier: Modifier, isShuffle: Boolean, repeatMode: RepeatMode, isFavorite: Boolean,
+    onSearch: () -> Unit, onLists: () -> Unit, onPrev: () -> Unit, onNext: () -> Unit,
+    onShuffle: () -> Unit, onRepeat: () -> Unit, onFavorite: () -> Unit
 ) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        IconButton(onClick = onSearch, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.Search, contentDescription = "Buscar", tint = TrimSilver)
-        }
-        IconButton(onClick = onLists, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.QueueMusic, contentDescription = "Listas", tint = TrimSilver)
-        }
-        IconButton(onClick = onPrev, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.SkipPrevious, contentDescription = "Anterior", tint = TrimSilver)
-        }
-        IconButton(onClick = onNext, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.SkipNext, contentDescription = "Siguiente", tint = TrimSilver)
-        }
-        IconButton(onClick = onShuffle, modifier = Modifier.weight(1f)) {
-            Icon(Icons.Filled.Shuffle, contentDescription = "Aleatorio", tint = if (isShuffle) ActiveGreen else Color(0xFF777777))
-        }
+    Row(modifier = modifier, horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+        IconButton(onClick = onSearch, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Search, "Buscar", tint = TrimSilver) }
+        IconButton(onClick = onLists, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.QueueMusic, "Listas", tint = TrimSilver) }
+        IconButton(onClick = onPrev, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.SkipPrevious, "Anterior", tint = TrimSilver) }
+        IconButton(onClick = onNext, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.SkipNext, "Siguiente", tint = TrimSilver) }
+        IconButton(onClick = onShuffle, modifier = Modifier.weight(1f)) { Icon(Icons.Filled.Shuffle, "Aleatorio", tint = if (isShuffle) ActiveGreen else Color(0xFF777777)) }
         IconButton(onClick = onRepeat, modifier = Modifier.weight(1f)) {
-            Icon(
-                imageVector = if (repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat,
-                contentDescription = "Repetir",
-                tint = if (repeatMode == RepeatMode.OFF) Color(0xFF777777) else ActiveGreen
-            )
+            Icon(if (repeatMode == RepeatMode.ONE) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "Repetir", tint = if (repeatMode == RepeatMode.OFF) Color(0xFF777777) else ActiveGreen)
         }
         IconButton(onClick = onFavorite, modifier = Modifier.weight(1f)) {
-            Icon(
-                imageVector = if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
-                contentDescription = "Favorito",
-                tint = if (isFavorite) Color(0xFFE57373) else TrimSilver
-            )
+            Icon(if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "Favorito", tint = if (isFavorite) Color(0xFFE57373) else TrimSilver)
         }
     }
 }
 
 private fun DrawScope.drawBody(zones: PlayerZones) {
-    val w = size.width
-    val h = size.height
-    val line = TrimSilver
-    val shell = ShellDark
-
+    val w = size.width; val h = size.height
+    val line = TrimSilver; val shell = ShellDark
     for (leg in listOf(zones.legL, zones.legR)) {
         drawRect(color = Color(0xFF0A0A0A), topLeft = Offset(leg.x0 * w, leg.y0 * h), size = Size(leg.w * w, leg.h * h))
     }
-
     drawRoundRect(color = shell, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f))
     drawRoundRect(color = line, size = Size(w, h * 0.965f), cornerRadius = CornerRadius(w * 0.06f), style = Stroke(width = w * 0.012f))
-
     zones.speaker?.let { sp ->
         val sx = sp.x0 * w; val sy = sp.y0 * h; val sw = sp.w * w; val sh = sp.h * h
         drawRoundRect(color = PanelDark, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f))
         drawRoundRect(color = line, topLeft = Offset(sx, sy), size = Size(sw, sh), cornerRadius = CornerRadius(sw * 0.04f), style = Stroke(width = w * 0.008f))
-        val step = sw / 24f
-        val cx = sx + sw * 0.36f
-        val cy = sy + sh * 0.52f
-        val clusterR = sw * 0.20f
+        val step = sw / 24f; val cx = sx + sw * 0.36f; val cy = sy + sh * 0.52f; val clusterR = sw * 0.20f
         var yy = sy + step
         while (yy < sy + sh - step * 0.5f) {
             var xx = sx + step
             while (xx < sx + sw - step * 0.5f) {
                 val dx = xx - cx; val dy = yy - cy
-                if (dx * dx + dy * dy < clusterR * clusterR) {
-                    drawCircle(color = line, radius = step * 0.32f, center = Offset(xx, yy))
-                } else {
-                    drawCircle(color = line.copy(alpha = 0.55f), radius = step * 0.30f, center = Offset(xx, yy), style = Stroke(width = step * 0.12f))
-                }
+                if (dx * dx + dy * dy < clusterR * clusterR) drawCircle(color = line, radius = step * 0.32f, center = Offset(xx, yy))
+                else drawCircle(color = line.copy(alpha = 0.55f), radius = step * 0.30f, center = Offset(xx, yy), style = Stroke(width = step * 0.12f))
                 xx += step
             }
             yy += step
         }
     }
-
     zones.sideGrille?.let { g ->
         val gx = g.x0 * w; val gy = g.y0 * h; val gw = g.w * w; val gh = g.h * h
-        for (i in 0 until 4) {
-            drawRect(color = DetailDark, topLeft = Offset(gx, gy + gh * i / 4f + gh * 0.1f), size = Size(gw, gh * 0.12f))
-        }
+        for (i in 0 until 4) drawRect(color = DetailDark, topLeft = Offset(gx, gy + gh * i / 4f + gh * 0.1f), size = Size(gw, gh * 0.12f))
     }
-
     run {
         val wz = zones.window
         val wx = wz.x0 * w; val wy = wz.y0 * h; val ww = wz.w * w; val wh = wz.h * h
@@ -303,16 +219,14 @@ fun LcdScreen(modifier: Modifier, playState: PlayState, progress: Float) {
             drawRect(color = Color(0xFF223322), topLeft = Offset(w * 0.06f, h * 0.55f), size = Size(w * 0.88f * progress, h * 0.22f))
         }
         Text(
-            text = when (playState) {
+            when (playState) {
                 PlayState.PLAYING -> "PLAY ${(progress * 100).toInt()}%"
                 PlayState.PAUSED -> "PAUSE ${(progress * 100).toInt()}%"
                 PlayState.STOPPED -> "STOP"
                 PlayState.EJECTED -> "EJECT"
                 PlayState.ERROR -> "ERROR"
             },
-            color = Color(0xFF1C2B1C),
-            fontSize = 10.sp,
-            fontWeight = FontWeight.Bold,
+            color = Color(0xFF1C2B1C), fontSize = 10.sp, fontWeight = FontWeight.Bold,
             modifier = Modifier.align(Alignment.TopStart).padding(start = 8.dp, top = 2.dp)
         )
     }
@@ -328,12 +242,7 @@ fun KnobsStrip(modifier: Modifier) {
             drawCircle(color = TrimSilver, radius = r, center = Offset(cx, cy))
             drawCircle(color = Color(0xFF1A1A1A), radius = r * 0.82f, center = Offset(cx, cy))
             val ang = (-60 + i * 45).toDouble() * PI / 180.0
-            drawLine(
-                color = TrimSilver,
-                start = Offset(cx, cy),
-                end = Offset(cx + (cos(ang) * r * 0.7).toFloat(), cy + (sin(ang) * r * 0.7).toFloat()),
-                strokeWidth = r * 0.22f
-            )
+            drawLine(color = TrimSilver, start = Offset(cx, cy), end = Offset(cx + (cos(ang) * r * 0.7).toFloat(), cy + (sin(ang) * r * 0.7).toFloat()), strokeWidth = r * 0.22f)
         }
     }
 }
