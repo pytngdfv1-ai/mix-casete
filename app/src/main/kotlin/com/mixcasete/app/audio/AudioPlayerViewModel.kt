@@ -1,17 +1,18 @@
 package com.mixcasete.app.audio
 
 import android.app.Application
-import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
-import com.google.common.util.concurrent.MoreExecutors
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.MergingMediaSource
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import com.mixcasete.app.data.AppDatabase
 import com.mixcasete.app.data.Playlist
 import com.mixcasete.app.data.PlaylistSongCrossRef
@@ -46,8 +47,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val songDao = database.songDao()
     private val playlistDao = database.playlistDao()
 
-    private var controllerFuture: ListenableFuture<MediaController>? = null
-    private var controller: MediaController? = null
+    private var exo: ExoPlayer? = null
 
     private val _playState = MutableStateFlow(PlayState.STOPPED)
     val playState: StateFlow<PlayState> = _playState.asStateFlow()
@@ -90,39 +90,41 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var currentSource: AudioSource? = null
     private var localUri: Uri? = null
 
-    init { initMediaController() }
-
-    private fun initMediaController() {
-        val token = SessionToken(getApplication(), ComponentName(getApplication(), PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(getApplication(), token).buildAsync()
-        controllerFuture?.addListener({
-            controller = controllerFuture?.let { try { it.get() } catch (e: Exception) { null } }
-            setupPlayerListener()
-        }, MoreExecutors.directExecutor())
+    private val playerListener = object : Player.Listener {
+        override fun onPlaybackStateChanged(s: Int) {
+            when (s) {
+                Player.STATE_READY -> { _playState.value = if (exo?.isPlaying == true) PlayState.PLAYING else PlayState.PAUSED; _errorInfo.value = null; updateProgress() }
+                Player.STATE_ENDED -> handleSongEnded()
+                Player.STATE_IDLE -> if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
+            }
+        }
+        override fun onIsPlayingChanged(p: Boolean) {
+            _playState.value = if (p) PlayState.PLAYING else PlayState.PAUSED
+            if (p) updateProgress()
+        }
+        override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
+            _errorInfo.value = ErrorInfo(e.message ?: "Error", currentSource?.type)
+        }
     }
 
-    private fun setupPlayerListener() {
-        controller?.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(s: Int) {
-                when (s) {
-                    Player.STATE_READY -> { _playState.value = if (controller?.isPlaying == true) PlayState.PLAYING else PlayState.PAUSED; _errorInfo.value = null; updateProgress() }
-                    Player.STATE_ENDED -> handleSongEnded()
-                    Player.STATE_IDLE -> if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
-                }
+    init {
+        try {
+            ContextCompat.startForegroundService(
+                getApplication(),
+                Intent(getApplication(), PlaybackService::class.java)
+            )
+        } catch (e: Exception) { }
+        viewModelScope.launch {
+            PlayerHolder.player.collect { p ->
+                exo = p
+                p?.addListener(playerListener)
             }
-            override fun onIsPlayingChanged(p: Boolean) {
-                _playState.value = if (p) PlayState.PLAYING else PlayState.PAUSED
-                if (p) updateProgress()
-            }
-            override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
-                _errorInfo.value = ErrorInfo(e.message ?: "Error", currentSource?.type)
-            }
-        })
+        }
     }
 
     private fun handleSongEnded() {
         when (_repeatMode.value) {
-            RepeatMode.ONE -> { controller?.seekTo(0); controller?.play() }
+            RepeatMode.ONE -> { exo?.seekTo(0); exo?.play() }
             RepeatMode.ALL -> when {
                 _currentPlaylist.value.isEmpty() -> _playState.value = PlayState.STOPPED
                 _currentSongIndex.value < _currentPlaylist.value.size - 1 -> playNextSong()
@@ -137,7 +139,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     fun togglePlayPause() {
         if (_isLidOpen.value) return
-        val p = controller ?: return
+        val p = exo ?: return
         if (p.isPlaying) { p.pause(); _playState.value = PlayState.PAUSED }
         else {
             if (p.playbackState == Player.STATE_IDLE || currentSource == null) viewModelScope.launch { loadNextSource() }
@@ -145,8 +147,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    fun pauseForTv() { controller?.pause(); _playState.value = PlayState.PAUSED }
-    fun stop() { controller?.stop(); controller?.clearMediaItems(); _playState.value = PlayState.STOPPED; _cassette.value = _cassette.value.copy(progress = 0f); currentSource = null }
+    fun stop() { exo?.stop(); exo?.clearMediaItems(); _playState.value = PlayState.STOPPED; _cassette.value = _cassette.value.copy(progress = 0f); currentSource = null }
 
     fun recordCurrentTrack() {
         viewModelScope.launch {
@@ -167,8 +168,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         flash("● '${result.title}' quedo como siguiente")
     }
 
-    fun rewind() { controller?.let { it.seekTo((it.currentPosition - 10000).coerceAtLeast(0)) } }
-    fun fastForward() { controller?.let { val d = it.duration; if (d > 0) it.seekTo((it.currentPosition + 10000).coerceAtMost(d)) } }
+    fun rewind() { exo?.let { it.seekTo((it.currentPosition - 10000).coerceAtLeast(0)) } }
+    fun fastForward() { exo?.let { val d = it.duration; if (d > 0) it.seekTo((it.currentPosition + 10000).coerceAtMost(d)) } }
     fun toggleCalibration() { _calibrationMode.value = !_calibrationMode.value }
     fun setLocalUri(uri: Uri) { localUri = uri }
 
@@ -182,53 +183,63 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     fun playSearchResult(result: SearchResult) {
-        viewModelScope.launch {
-            val audioUrl = PipedResolver.resolveAudioUrl(result.videoId)
-            if (audioUrl == null) {
-                _errorInfo.value = ErrorInfo("No se pudo obtener el audio (reintenta o usa Modo YouTube)", SourceType.YOUTUBE)
-                _showSearchScreen.value = false
-                return@launch
-            }
-            val song = Song(url = audioUrl, title = result.title, artist = result.artist, thumbnailUrl = result.thumbnailUrl,
-                videoUrl = "https://www.youtube.com/watch?v=${result.videoId}")
-            val id = songDao.insertSong(song); val saved = song.copy(id = id)
-            _currentPlaylist.value = listOf(saved); _currentSongIndex.value = 0
-            _currentVideoUrl.value = saved.videoUrl
-            _cassette.value = _cassette.value.copy(sourceLabel = result.sourceLabel)
-            playSongAt(0); _showSearchScreen.value = false
-        }
+        val song = Song(url = "", title = result.title, artist = result.artist, thumbnailUrl = result.thumbnailUrl,
+            videoUrl = "https://www.youtube.com/watch?v=${result.videoId}")
+        _currentPlaylist.value = listOf(song)
+        _currentSongIndex.value = 0
+        _cassette.value = _cassette.value.copy(sourceLabel = result.sourceLabel)
+        viewModelScope.launch { songDao.insertSong(song) }
+        playSongAt(0)
+        _showSearchScreen.value = false
     }
 
     fun playPlaylistSongs(songs: List<Song>) { if (songs.isEmpty()) return; _currentPlaylist.value = songs; _currentSongIndex.value = 0; playSongAt(0); _showPlaylistScreen.value = false }
     fun playNextSong() { if (_currentPlaylist.value.isEmpty()) return; playSongAt(if (_isShuffleEnabled.value) (0 until _currentPlaylist.value.size).random() else (_currentSongIndex.value + 1) % _currentPlaylist.value.size) }
     fun playPreviousSong() { if (_currentPlaylist.value.isEmpty()) return; playSongAt(if (_currentSongIndex.value > 0) _currentSongIndex.value - 1 else _currentPlaylist.value.size - 1) }
 
-    // Navegacion para Modo YouTube (no toca el service; el player local de esa pantalla reproduce)
-    fun tvNext() { if (_currentPlaylist.value.isEmpty()) return; updateCurrentForTv(if (_isShuffleEnabled.value) (0 until _currentPlaylist.value.size).random() else (_currentSongIndex.value + 1) % _currentPlaylist.value.size) }
-    fun tvPrev() { if (_currentPlaylist.value.isEmpty()) return; updateCurrentForTv(if (_currentSongIndex.value > 0) _currentSongIndex.value - 1 else _currentPlaylist.value.size - 1) }
-    private fun updateCurrentForTv(index: Int) {
-        val song = _currentPlaylist.value[index]
-        _currentSongIndex.value = index
-        _currentVideoUrl.value = song.videoUrl
-        _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
-    }
-
     private fun playSongAt(index: Int) {
         if (index < 0 || index >= _currentPlaylist.value.size) return
         viewModelScope.launch {
-            val song = _currentPlaylist.value[index]; _currentSongIndex.value = index
-            var playUrl = song.url
-            val vid = extractVideoId(song.videoUrl)
-            if (vid != null) {
-                val r = PipedResolver.resolveAudioUrl(vid)
-                if (r != null) { playUrl = r; val nl = _currentPlaylist.value.toMutableList(); nl[index] = song.copy(url = r); _currentPlaylist.value = nl }
-                else if (playUrl.isEmpty()) { _errorInfo.value = ErrorInfo("No se pudo resolver audio", SourceType.YOUTUBE); return@launch }
-            }
-            _currentVideoUrl.value = song.videoUrl
-            currentSource = AudioSource(url = playUrl, type = SourceType.YOUTUBE, title = song.title, artist = song.artist)
+            val song = _currentPlaylist.value[index]
+            _currentSongIndex.value = index
             _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
-            controller?.setMediaItem(MediaItem.Builder().setUri(playUrl).setMediaMetadata(MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).build()).build())
-            controller?.prepare(); controller?.play()
+            _currentVideoUrl.value = song.videoUrl
+            val p = exo ?: return@launch
+            val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).build()
+            val vid = extractVideoId(song.videoUrl)
+
+            if (vid != null) {
+                val stream = VideoResolver.resolve(vid)
+                when {
+                    stream?.progressiveUrl != null -> {
+                        currentSource = AudioSource(stream.progressiveUrl, SourceType.YOUTUBE, song.title, song.artist)
+                        p.setMediaItem(MediaItem.Builder().setUri(stream.progressiveUrl).setMediaMetadata(meta).build())
+                        p.prepare(); p.play()
+                    }
+                    stream?.videoUrl != null && stream.audioUrl != null -> {
+                        currentSource = AudioSource(stream.videoUrl, SourceType.YOUTUBE, song.title, song.artist)
+                        val f = DefaultDataSource.Factory(getApplication())
+                        val v = ProgressiveMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(stream.videoUrl))
+                        val a = ProgressiveMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(stream.audioUrl))
+                        p.setMediaSource(MergingMediaSource(v, a))
+                        p.prepare(); p.play()
+                    }
+                    else -> {
+                        val audio = PipedResolver.resolveAudioUrl(vid)
+                        if (audio != null) {
+                            currentSource = AudioSource(audio, SourceType.YOUTUBE, song.title, song.artist)
+                            p.setMediaItem(MediaItem.Builder().setUri(audio).setMediaMetadata(meta).build())
+                            p.prepare(); p.play()
+                        } else {
+                            _errorInfo.value = ErrorInfo("No se pudo obtener video/audio de YouTube", SourceType.YOUTUBE)
+                        }
+                    }
+                }
+            } else {
+                currentSource = AudioSource(song.url, SourceType.LOCAL, song.title, song.artist)
+                p.setMediaItem(MediaItem.Builder().setUri(song.url).setMediaMetadata(meta).build())
+                p.prepare(); p.play()
+            }
         }
     }
 
@@ -257,23 +268,24 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private suspend fun loadNextSource() {
         val n = sourceManager.getNextSource(currentSource, localUri)
+        val p = exo ?: return
         if (n != null) {
             currentSource = n
             _cassette.value = _cassette.value.copy(title = n.title, artist = n.artist, progress = 0f)
-            controller?.setMediaItem(MediaItem.Builder().setUri(n.url).setMediaMetadata(MediaMetadata.Builder().setTitle(n.title).setArtist(n.artist).build()).build())
-            controller?.prepare(); controller?.play()
+            p.setMediaItem(MediaItem.Builder().setUri(n.url).setMediaMetadata(MediaMetadata.Builder().setTitle(n.title).setArtist(n.artist).build()).build())
+            p.prepare(); p.play()
         } else _playState.value = PlayState.ERROR
     }
 
     private fun updateProgress() {
         viewModelScope.launch {
             while (_playState.value == PlayState.PLAYING) {
-                val p = controller ?: break
+                val p = exo ?: break
                 if (p.duration > 0) _cassette.value = _cassette.value.copy(progress = p.currentPosition.toFloat() / p.duration)
                 delay(100)
             }
         }
     }
 
-    override fun onCleared() { controllerFuture?.let { MediaController.releaseFuture(it) }; super.onCleared() }
+    override fun onCleared() { super.onCleared() }
 }
