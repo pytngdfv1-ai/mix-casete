@@ -19,7 +19,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.MixCasete"
         tools:targetApi="31">
-        
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -31,20 +31,10 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".tv.TvActivity"
-            android:exported="false"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden"
-            android:theme="@style/Theme.MixCasete" />
-
         <service
             android:name=".audio.PlaybackService"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
-            </intent-filter>
-        </service>
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
     </application>
 
 </manifest>
