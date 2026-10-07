@@ -1,22 +1,11 @@
 package com.mixcasete.app.audio
 
 import android.app.Application
-import android.content.ComponentName
+import android.content.Intent
 import android.net.Uri
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.MergingMediaSource
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.session.MediaController
-import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.ListenableFuture
 import com.mixcasete.app.data.AppDatabase
 import com.mixcasete.app.data.Playlist
 import com.mixcasete.app.data.PlaylistSongCrossRef
@@ -27,6 +16,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -43,21 +33,13 @@ data class ErrorInfo(val message: String, val source: SourceType?)
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object {
-        const val REC_PLAYLIST = "Grabaciones"
-        private const val CHROME_UA =
-            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
-    }
+    companion object { const val REC_PLAYLIST = "Grabaciones" }
 
     private val sourceManager = SourceManager(application)
     private val searchManager = SearchManager(application)
     private val database = AppDatabase.getDatabase(application)
     private val songDao = database.songDao()
     private val playlistDao = database.playlistDao()
-
-    private var exo: ExoPlayer? = null
-    private var controllerFuture: ListenableFuture<MediaController>? = null
-    private var retryCount = 0
 
     private val _playState = MutableStateFlow(PlayState.STOPPED)
     val playState: StateFlow<PlayState> = _playState.asStateFlow()
@@ -97,86 +79,58 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     val allPlaylists = playlistDao.getAllPlaylists().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     val favoriteSongs = songDao.getFavoriteSongs().stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    private var currentSource: AudioSource? = null
     private var localUri: Uri? = null
 
-    private val playerListener = object : Player.Listener {
-        override fun onPlaybackStateChanged(s: Int) {
-            when (s) {
-                Player.STATE_READY -> {
-                    retryCount = 0
-                    _playState.value = if (exo?.isPlaying == true) PlayState.PLAYING else PlayState.PAUSED
-                    _errorInfo.value = null
-                    updateProgress()
-                }
-                Player.STATE_ENDED -> handleSongEnded()
-                Player.STATE_IDLE -> if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
-            }
-        }
-        override fun onIsPlayingChanged(p: Boolean) {
-            _playState.value = if (p) PlayState.PLAYING else PlayState.PAUSED
-            if (p) updateProgress()
-        }
-        override fun onPlayerError(e: PlaybackException) {
-            _errorInfo.value = ErrorInfo(e.message ?: "Error", currentSource?.type)
-            // Reintento automatico ante cualquier error (URL muerta, 403, timeout, firma expirada)
-            // hasta 2 veces. Si es permanente, se rinde y muestra el error al usuario.
-            if (retryCount < 2) {
-                retryCount++
-                viewModelScope.launch {
-                    delay(1200)
-                    playSongAt(_currentSongIndex.value)
-                }
-            }
-        }
-    }
-
     init {
-        val token = SessionToken(getApplication(), ComponentName(getApplication(), PlaybackService::class.java))
-        controllerFuture = MediaController.Builder(getApplication(), token).buildAsync()
+        // Espejar el estado del WebView en la UI del casete
         viewModelScope.launch {
-            PlayerHolder.player.collect { p ->
-                exo = p
-                p?.addListener(playerListener)
+            YtBridge.state.collectLatest { st ->
+                _playState.value = when {
+                    st.error != null -> PlayState.ERROR
+                    st.isPlaying -> PlayState.PLAYING
+                    st.videoId != null -> PlayState.PAUSED
+                    else -> PlayState.STOPPED
+                }
+                if (st.videoId != null) {
+                    _cassette.value = _cassette.value.copy(
+                        title = st.title.ifBlank { _cassette.value.title },
+                        artist = st.artist.ifBlank { _cassette.value.artist },
+                        progress = if (st.durationSec > 0) st.positionSec / st.durationSec else _cassette.value.progress
+                    )
+                    _currentVideoUrl.value = "https://www.youtube.com/watch?v=${st.videoId}"
+                }
+            }
+        }
+        // Atender comandos de la notificacion (next/prev)
+        viewModelScope.launch {
+            YtBridge.commands.collectLatest { cmd ->
+                when (cmd) {
+                    YtCmd.Next -> playNextSong()
+                    YtCmd.Prev -> playPreviousSong()
+                    else -> {}
+                }
             }
         }
     }
 
-    private fun httpFactory(): DefaultDataSource.Factory {
-        val http = DefaultHttpDataSource.Factory()
-            .setUserAgent(CHROME_UA)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(20_000)
-            .setReadTimeoutMs(20_000)
-        return DefaultDataSource.Factory(getApplication(), http)
+    private fun startService() {
+        try {
+            ContextCompat.startForegroundService(getApplication(), Intent(getApplication(), PlaybackService::class.java))
+        } catch (e: Exception) { }
     }
 
-    private fun handleSongEnded() {
-        when (_repeatMode.value) {
-            RepeatMode.ONE -> { exo?.seekTo(0); exo?.play() }
-            RepeatMode.ALL -> when {
-                _currentPlaylist.value.isEmpty() -> _playState.value = PlayState.STOPPED
-                _currentSongIndex.value < _currentPlaylist.value.size - 1 -> playNextSong()
-                else -> playSongAt(0)
-            }
-            RepeatMode.OFF -> if (_currentPlaylist.value.isNotEmpty() && _currentSongIndex.value < _currentPlaylist.value.size - 1) playNextSong()
-            else _playState.value = PlayState.STOPPED
-        }
+    private fun stopService() {
+        try { getApplication<Application>().stopService(Intent(getApplication(), PlaybackService::class.java)) } catch (e: Exception) { }
     }
 
     private fun flash(m: String) { _recMessage.value = m; viewModelScope.launch { delay(2000); _recMessage.value = null } }
 
     fun togglePlayPause() {
         if (_isLidOpen.value) return
-        val p = exo ?: return
-        if (p.isPlaying) { p.pause(); _playState.value = PlayState.PAUSED }
-        else {
-            if (p.playbackState == Player.STATE_IDLE || currentSource == null) viewModelScope.launch { loadNextSource() }
-            else { p.play(); _playState.value = PlayState.PLAYING }
-        }
+        YtBridge.emit(if (YtBridge.state.value.isPlaying) YtCmd.Pause else YtCmd.Play)
     }
 
-    fun stop() { exo?.stop(); exo?.clearMediaItems(); _playState.value = PlayState.STOPPED; _cassette.value = _cassette.value.copy(progress = 0f); currentSource = null }
+    fun stop() { YtBridge.emit(YtCmd.Stop); _playState.value = PlayState.STOPPED; _cassette.value = _cassette.value.copy(progress = 0f); stopService() }
 
     fun recordCurrentTrack() {
         viewModelScope.launch {
@@ -197,8 +151,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         flash("● '${result.title}' quedo como siguiente")
     }
 
-    fun rewind() { exo?.let { it.seekTo((it.currentPosition - 10000).coerceAtLeast(0)) } }
-    fun fastForward() { exo?.let { val d = it.duration; if (d > 0) it.seekTo((it.currentPosition + 10000).coerceAtMost(d)) } }
+    fun rewind() { YtBridge.emit(YtCmd.Seek((YtBridge.state.value.positionSec - 10).coerceAtLeast(0f))) }
+    fun fastForward() {
+        val d = YtBridge.state.value.durationSec
+        YtBridge.emit(YtCmd.Seek((YtBridge.state.value.positionSec + 10).coerceAtMost(d)))
+    }
     fun toggleCalibration() { _calibrationMode.value = !_calibrationMode.value }
     fun setLocalUri(uri: Uri) { localUri = uri }
 
@@ -228,47 +185,17 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private fun playSongAt(index: Int) {
         if (index < 0 || index >= _currentPlaylist.value.size) return
-        viewModelScope.launch {
-            val song = _currentPlaylist.value[index]
-            _currentSongIndex.value = index
-            _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
-            _currentVideoUrl.value = song.videoUrl
-            val p = exo ?: return@launch
-            val meta = MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).build()
-            val vid = extractVideoId(song.videoUrl)
-
-            if (vid != null) {
-                val stream = VideoResolver.resolve(vid)
-                when {
-                    stream?.progressiveUrl != null -> {
-                        currentSource = AudioSource(stream.progressiveUrl, SourceType.YOUTUBE, song.title, song.artist)
-                        p.setMediaItem(MediaItem.Builder().setUri(stream.progressiveUrl).setMediaMetadata(meta).build())
-                        p.prepare(); p.play()
-                    }
-                    stream?.videoUrl != null && stream.audioUrl != null -> {
-                        currentSource = AudioSource(stream.videoUrl, SourceType.YOUTUBE, song.title, song.artist)
-                        val f = httpFactory()
-                        val v = ProgressiveMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(stream.videoUrl))
-                        val a = ProgressiveMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(stream.audioUrl))
-                        p.setMediaSource(MergingMediaSource(v, a))
-                        p.prepare(); p.play()
-                    }
-                    else -> {
-                        val audio = PipedResolver.resolveAudioUrl(vid)
-                        if (audio != null) {
-                            currentSource = AudioSource(audio, SourceType.YOUTUBE, song.title, song.artist)
-                            p.setMediaItem(MediaItem.Builder().setUri(audio).setMediaMetadata(meta).build())
-                            p.prepare(); p.play()
-                        } else {
-                            _errorInfo.value = ErrorInfo("No se pudo obtener video/audio de YouTube", SourceType.YOUTUBE)
-                        }
-                    }
-                }
-            } else {
-                currentSource = AudioSource(song.url, SourceType.LOCAL, song.title, song.artist)
-                p.setMediaItem(MediaItem.Builder().setUri(song.url).setMediaMetadata(meta).build())
-                p.prepare(); p.play()
-            }
+        val song = _currentPlaylist.value[index]
+        _currentSongIndex.value = index
+        _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
+        _currentVideoUrl.value = song.videoUrl
+        val vid = extractVideoId(song.videoUrl)
+        if (vid != null) {
+            startService()
+            YtBridge.emit(YtCmd.Load(vid, song.title, song.artist))
+        } else {
+            // Archivo local: sin WebView; se podria enchufar a ExoPlayer si hace falta
+            _errorInfo.value = ErrorInfo("Los archivos locales se reproducen igual; YouTube usa el motor oficial", SourceType.LOCAL)
         }
     }
 
@@ -295,29 +222,5 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun togglePlaylistScreen() { _showPlaylistScreen.value = !_showPlaylistScreen.value }
     fun toggleLoginScreen() { _showLoginScreen.value = !_showLoginScreen.value }
 
-    private suspend fun loadNextSource() {
-        val n = sourceManager.getNextSource(currentSource, localUri)
-        val p = exo ?: return
-        if (n != null) {
-            currentSource = n
-            _cassette.value = _cassette.value.copy(title = n.title, artist = n.artist, progress = 0f)
-            p.setMediaItem(MediaItem.Builder().setUri(n.url).setMediaMetadata(MediaMetadata.Builder().setTitle(n.title).setArtist(n.artist).build()).build())
-            p.prepare(); p.play()
-        } else _playState.value = PlayState.ERROR
-    }
-
-    private fun updateProgress() {
-        viewModelScope.launch {
-            while (_playState.value == PlayState.PLAYING) {
-                val p = exo ?: break
-                if (p.duration > 0) _cassette.value = _cassette.value.copy(progress = p.currentPosition.toFloat() / p.duration)
-                delay(100)
-            }
-        }
-    }
-
-    override fun onCleared() {
-        controllerFuture?.let { MediaController.releaseFuture(it) }
-        super.onCleared()
-    }
+    override fun onCleared() { stopService(); super.onCleared() }
 }
