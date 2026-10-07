@@ -1,9 +1,8 @@
 package com.mixcasete.app.audio
 
 import android.app.Application
-import android.content.Intent
+import android.content.ComponentName
 import android.net.Uri
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -13,6 +12,9 @@ import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import com.mixcasete.app.data.AppDatabase
 import com.mixcasete.app.data.Playlist
 import com.mixcasete.app.data.PlaylistSongCrossRef
@@ -48,6 +50,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val playlistDao = database.playlistDao()
 
     private var exo: ExoPlayer? = null
+    private var controllerFuture: ListenableFuture<MediaController>? = null
 
     private val _playState = MutableStateFlow(PlayState.STOPPED)
     val playState: StateFlow<PlayState> = _playState.asStateFlow()
@@ -108,12 +111,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     }
 
     init {
-        try {
-            ContextCompat.startForegroundService(
-                getApplication(),
-                Intent(getApplication(), PlaybackService::class.java)
-            )
-        } catch (e: Exception) { }
+        // Conectar un MediaController SOLO para arrancar/bindear el servicio
+        // (bind no exige startForeground inmediato -> evita el crash).
+        val token = SessionToken(getApplication(), ComponentName(getApplication(), PlaybackService::class.java))
+        controllerFuture = MediaController.Builder(getApplication(), token).buildAsync()
+
         viewModelScope.launch {
             PlayerHolder.player.collect { p ->
                 exo = p
@@ -287,5 +289,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         }
     }
 
-    override fun onCleared() { super.onCleared() }
+    override fun onCleared() {
+        controllerFuture?.let { MediaController.releaseFuture(it) }
+        super.onCleared()
+    }
 }
