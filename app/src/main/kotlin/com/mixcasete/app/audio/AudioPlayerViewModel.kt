@@ -7,8 +7,10 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.MergingMediaSource
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
@@ -41,7 +43,11 @@ data class ErrorInfo(val message: String, val source: SourceType?)
 
 class AudioPlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    companion object { const val REC_PLAYLIST = "Grabaciones" }
+    companion object {
+        const val REC_PLAYLIST = "Grabaciones"
+        private const val CHROME_UA =
+            "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
+    }
 
     private val sourceManager = SourceManager(application)
     private val searchManager = SearchManager(application)
@@ -51,6 +57,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
 
     private var exo: ExoPlayer? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var retryCount = 0
 
     private val _playState = MutableStateFlow(PlayState.STOPPED)
     val playState: StateFlow<PlayState> = _playState.asStateFlow()
@@ -96,7 +103,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(s: Int) {
             when (s) {
-                Player.STATE_READY -> { _playState.value = if (exo?.isPlaying == true) PlayState.PLAYING else PlayState.PAUSED; _errorInfo.value = null; updateProgress() }
+                Player.STATE_READY -> {
+                    retryCount = 0
+                    _playState.value = if (exo?.isPlaying == true) PlayState.PLAYING else PlayState.PAUSED
+                    _errorInfo.value = null
+                    updateProgress()
+                }
                 Player.STATE_ENDED -> handleSongEnded()
                 Player.STATE_IDLE -> if (_playState.value != PlayState.STOPPED) _playState.value = PlayState.STOPPED
             }
@@ -105,23 +117,37 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             _playState.value = if (p) PlayState.PLAYING else PlayState.PAUSED
             if (p) updateProgress()
         }
-        override fun onPlayerError(e: androidx.media3.common.PlaybackException) {
+        override fun onPlayerError(e: PlaybackException) {
             _errorInfo.value = ErrorInfo(e.message ?: "Error", currentSource?.type)
+            // Si la URL murio (403/firma expirada), re-resolver y reintentar hasta 2 veces
+            if (e.type == PlaybackException.TYPE_SOURCE && retryCount < 2) {
+                retryCount++
+                viewModelScope.launch {
+                    delay(1200)
+                    playSongAt(_currentSongIndex.value)
+                }
+            }
         }
     }
 
     init {
-        // Conectar un MediaController SOLO para arrancar/bindear el servicio
-        // (bind no exige startForeground inmediato -> evita el crash).
         val token = SessionToken(getApplication(), ComponentName(getApplication(), PlaybackService::class.java))
         controllerFuture = MediaController.Builder(getApplication(), token).buildAsync()
-
         viewModelScope.launch {
             PlayerHolder.player.collect { p ->
                 exo = p
                 p?.addListener(playerListener)
             }
         }
+    }
+
+    private fun httpFactory(): DefaultDataSource.Factory {
+        val http = DefaultHttpDataSource.Factory()
+            .setUserAgent(CHROME_UA)
+            .setAllowCrossProtocolRedirects(true)
+            .setConnectTimeoutMs(20_000)
+            .setReadTimeoutMs(20_000)
+        return DefaultDataSource.Factory(getApplication(), http)
     }
 
     private fun handleSongEnded() {
@@ -220,7 +246,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     stream?.videoUrl != null && stream.audioUrl != null -> {
                         currentSource = AudioSource(stream.videoUrl, SourceType.YOUTUBE, song.title, song.artist)
-                        val f = DefaultDataSource.Factory(getApplication())
+                        val f = httpFactory()
                         val v = ProgressiveMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(stream.videoUrl))
                         val a = ProgressiveMediaSource.Factory(f).createMediaSource(MediaItem.fromUri(stream.audioUrl))
                         p.setMediaSource(MergingMediaSource(v, a))
