@@ -9,6 +9,7 @@ import android.webkit.WebViewClient
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -16,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
 import com.mixcasete.app.audio.YtBridge
+import com.mixcasete.app.audio.YtCmd
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -44,7 +46,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 settings.domStorageEnabled = true
                 settings.databaseEnabled = true
                 settings.mediaPlaybackRequiresUserGesture = false
-                // UA NATIVO del WebView (no falsear): evita el chequeo anti-bot que causaba 152
                 webViewClient = WebViewClient()
                 webChromeClient = WebChromeClient()
                 setBackgroundColor(0xFF000000.toInt())
@@ -64,7 +65,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 }, "Android")
                 loadDataWithBaseURL("https://www.youtube.com/", html, "text/html", "utf-8", null)
                 webView = this
-                // Registrar controlador y cargar pending si lo hay
                 val wv = this
                 YtBridge.controller = object : YtBridge.YtController {
                     override fun load(id: String) { wv.evaluateJavascript("window.loadById&&loadById('$id')", null) }
@@ -81,7 +81,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
         }
     )
 
-    // Reaccionar a comandos (play/pause/seek/stop/load) emitidos por UI o notificacion
     LaunchedEffect(Unit) {
         YtBridge.commands.collect { cmd ->
             val c = YtBridge.controller
