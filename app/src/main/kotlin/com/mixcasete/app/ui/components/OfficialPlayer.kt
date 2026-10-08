@@ -22,8 +22,6 @@ import com.mixcasete.app.audio.YtCmd
 @Composable
 fun OfficialPlayer(modifier: Modifier = Modifier) {
     var webView by remember { mutableStateOf<WebView?>(null) }
-    var retried by remember { mutableStateOf(false) }
-    val html = remember { buildHtml() }
 
     DisposableEffect(Unit) {
         onDispose {
@@ -48,16 +46,16 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 settings.mediaPlaybackRequiresUserGesture = false
                 settings.loadsImagesAutomatically = true
                 settings.setSupportZoom(false)
+                settings.builtInZoomControls = false
+                settings.displayZoomControls = false
 
-                // FIX CLAVE DEL 152: UA real del WebView SIN el marcador "; wv".
-                // Con "; wv" YouTube detecta WebView incrustado y rechaza el IFrame API.
+                // UA real del dispositivo SIN el marcador "; wv": evita que YouTube
+                // redirija la watch page a la app nativa y sirve el reproductor HTML5.
                 val baseUA = settings.userAgentString
                 settings.userAgentString = baseUA.replace("; wv", "").trim()
 
-                webViewClient = WebViewClient()
-                webChromeClient = WebChromeClient()
-                setBackgroundColor(0xFF000000.toInt())
-
+                // Registrar el bridge JS ANTES de navegar, para que los eventos del
+                // <video> (timeupdate/play/pause/ended) lleguen a Android.
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface fun onReady() { YtBridge.setState { it.copy(ready = true) } }
                     @JavascriptInterface fun onState(s: Int) {
@@ -65,39 +63,42 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                     }
                     @JavascriptInterface fun onTime(t: Double) { YtBridge.setState { it.copy(positionSec = t.toFloat()) } }
                     @JavascriptInterface fun onDur(d: Double) { YtBridge.setState { it.copy(durationSec = d.toFloat()) } }
-                    @JavascriptInterface fun onErr(e: Int) {
-                        YtBridge.setState { it.copy(error = e, isPlaying = false) }
-                        // Re-intento unico si el 152 fue transitorio (handshake caido)
-                        if (e == 152 && !retried) {
-                            retried = true
-                            postDelayed({ reload() }, 900)
-                        }
-                    }
+                    @JavascriptInterface fun onErr(e: Int) { YtBridge.setState { it.copy(error = e, isPlaying = false) } }
                 }, "Android")
 
-                loadDataWithBaseURL("https://www.youtube.com/", html, "text/html", "utf-8", null)
-                webView = this
+                webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        // Inyecta el controlador del <video> despues de cada carga
+                        view?.evaluateJavascript(CONTROL_JS, null)
+                    }
+                }
+                webChromeClient = WebChromeClient()
+                setBackgroundColor(0xFF000000.toInt())
+
                 val wv = this
                 YtBridge.controller = object : YtBridge.YtController {
-                    override fun load(id: String) { wv.evaluateJavascript("window.loadById&&loadById('$id')", null) }
+                    // load = navegar a la watch page real (NO embed)
+                    override fun load(id: String) { wv.loadUrl("https://www.youtube.com/watch?v=$id") }
                     override fun play() { wv.evaluateJavascript("window.playV&&playV()", null) }
                     override fun pause() { wv.evaluateJavascript("window.pauseV&&pauseV()", null) }
                     override fun seek(sec: Float) { wv.evaluateJavascript("window.seekV&&seekV($sec)", null) }
                     override fun stop() { wv.evaluateJavascript("window.stopV&&stopV()", null) }
                 }
-                YtBridge.pendingId?.let { pid ->
-                    YtBridge.pendingId = null
-                    wv.post { YtBridge.controller?.load(pid) }
-                }
+
+                // Tema pendiente (emitido antes de que el WebView existiera) o activo
+                val startId = YtBridge.pendingId ?: YtBridge.activeId.value
+                YtBridge.pendingId = null
+                if (startId != null) wv.loadUrl("https://www.youtube.com/watch?v=$startId")
             }
         }
     )
 
+    // Comandos en vivo (cambio de tema, play/pause/seek/stop)
     LaunchedEffect(Unit) {
         YtBridge.commands.collect { cmd ->
             val c = YtBridge.controller ?: return@collect
             when (cmd) {
-                is YtCmd.Load -> { YtBridge.pendingId = null; retried = false; c.load(cmd.id) }
+                is YtCmd.Load -> c.load(cmd.id)
                 YtCmd.Play -> c.play()
                 YtCmd.Pause -> c.pause()
                 YtCmd.Toggle -> { if (YtBridge.state.value.isPlaying) c.pause() else c.play() }
@@ -109,37 +110,37 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
     }
 }
 
-// Sin "origin" explicito: el origin efectivo lo aporta el baseURL (youtube.com),
-// y ponerlo igual al host provocaba mismatch -> 152.
-private fun buildHtml(): String = """
-<html><head><meta charset="utf-8"><style>
-html,body{margin:0;padding:0;background:#000;height:100%;overflow:hidden}
-#wrap{position:fixed;inset:0}#player{width:100%;height:100%}
-</style></head>
-<body><div id="wrap"><div id="player"></div></div>
-<script src="https://www.youtube.com/iframe_api"></script>
-<script>
-var player; var ready=false; var pendingId=null;
-function onYouTubeIframeAPIReady(){
-  player=new YT.Player('player',{
-    host:'https://www.youtube.com',
-    playerVars:{controls:0,rel:0,playsinline:1,modestbranding:1,iv_load_policy:3},
-    events:{
-      onReady:function(){ ready=true; if(window.Android) Android.onReady(); if(pendingId){ player.loadVideoById(pendingId,0,'default'); pendingId=null; } },
-      onStateChange:function(e){ if(window.Android) Android.onState(e.data); },
-      onError:function(e){ if(window.Android) Android.onErr(e.data); }
+// JS que engancha el <video> de la watch page, reporta estado a Android,
+// fuerza autoplay, anula la pausa por "page hidden" (para segundo plano)
+// y remueve overlays de consentimiento/"abrir en app" que tapan el reproductor.
+private const val CONTROL_JS = """
+(function(){
+  window.__mixBind=function(){
+    var v=document.querySelector('video');
+    if(!v){
+      if(window.__mixTries===undefined)window.__mixTries=0;
+      window.__mixTries++;
+      if(window.__mixTries<80) setTimeout(window.__mixBind,250);
+      return;
     }
-  });
-}
-setInterval(function(){
-  if(ready&&player&&player.getCurrentTime){
-    try{ Android.onTime(player.getCurrentTime()); Android.onDur(player.getDuration()); }catch(e){}
-  }
-},1000);
-function loadById(id){ if(ready){ player.loadVideoById(id,0,'default'); } else { pendingId=id; } }
-function playV(){ if(ready) player.playVideo(); }
-function pauseV(){ if(ready) player.pauseVideo(); }
-function seekV(s){ if(ready) player.seekTo(s,true); }
-function stopV(){ if(ready){ player.pauseVideo(); try{player.seekTo(0);}catch(e){} } }
-</script></body></html>
+    window.__mixTries=0;
+    if(!v.__mixbound){
+      v.__mixbound=true;
+      v.addEventListener('timeupdate',function(){ try{Android.onTime(v.currentTime);Android.onDur(v.duration||0);}catch(e){} });
+      v.addEventListener('play',function(){ try{Android.onState(1);}catch(e){} });
+      v.addEventListener('pause',function(){ try{Android.onState(2);}catch(e){} });
+      v.addEventListener('ended',function(){ try{Android.onState(0);}catch(e){} });
+    }
+    try{ Object.defineProperty(document,'hidden',{get:function(){return false;},configurable:true}); }catch(e){}
+    try{ Object.defineProperty(document,'visibilityState',{get:function(){return 'visible';},configurable:true}); }catch(e){}
+    var kill=['ytd-enforcement-message-view-model','.ytp-inline-player-small','tp-yt-paper-dialog','ytd-consent-bump-v2-lightbox','#dismiss-button','.ytd-enforcement-message-view-model','ytd-mealbar-promo-renderer'];
+    kill.forEach(function(s){ try{document.querySelectorAll(s).forEach(function(el){el.remove();});}catch(e){} });
+    try{ v.muted=false; v.play(); }catch(e){}
+  };
+  window.playV=function(){ var v=document.querySelector('video'); if(v){try{v.play();}catch(e){}} };
+  window.pauseV=function(){ var v=document.querySelector('video'); if(v){try{v.pause();}catch(e){}} };
+  window.seekV=function(s){ var v=document.querySelector('video'); if(v){try{v.currentTime=s;}catch(e){}} };
+  window.stopV=function(){ var v=document.querySelector('video'); if(v){try{v.pause();v.currentTime=0;}catch(e){}} };
+  window.__mixBind();
+})();
 """
