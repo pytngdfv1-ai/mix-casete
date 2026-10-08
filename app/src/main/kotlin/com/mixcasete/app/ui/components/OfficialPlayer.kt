@@ -48,14 +48,14 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 settings.setSupportZoom(false)
                 settings.builtInZoomControls = false
                 settings.displayZoomControls = false
+                settings.allowFileAccess = false
+                settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
 
-                // UA real del dispositivo SIN el marcador "; wv": evita que YouTube
-                // redirija la watch page a la app nativa y sirve el reproductor HTML5.
+                // UA real SIN el marcador "; wv": evita que YouTube mande a la app
+                // nativa y sirve el reproductor HTML5 de la watch page.
                 val baseUA = settings.userAgentString
                 settings.userAgentString = baseUA.replace("; wv", "").trim()
 
-                // Registrar el bridge JS ANTES de navegar, para que los eventos del
-                // <video> (timeupdate/play/pause/ended) lleguen a Android.
                 addJavascriptInterface(object : Any() {
                     @JavascriptInterface fun onReady() { YtBridge.setState { it.copy(ready = true) } }
                     @JavascriptInterface fun onState(s: Int) {
@@ -68,8 +68,8 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
 
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
-                        // Inyecta el controlador del <video> despues de cada carga
-                        view?.evaluateJavascript(CONTROL_JS, null)
+                        view?.evaluateJavascript(STYLE_JS, null)   // recorta a solo <video>
+                        view?.evaluateJavascript(CONTROL_JS, null)  // engancha y controla el video
                     }
                 }
                 webChromeClient = WebChromeClient()
@@ -77,7 +77,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
 
                 val wv = this
                 YtBridge.controller = object : YtBridge.YtController {
-                    // load = navegar a la watch page real (NO embed)
                     override fun load(id: String) { wv.loadUrl("https://www.youtube.com/watch?v=$id") }
                     override fun play() { wv.evaluateJavascript("window.playV&&playV()", null) }
                     override fun pause() { wv.evaluateJavascript("window.pauseV&&pauseV()", null) }
@@ -85,7 +84,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                     override fun stop() { wv.evaluateJavascript("window.stopV&&stopV()", null) }
                 }
 
-                // Tema pendiente (emitido antes de que el WebView existiera) o activo
                 val startId = YtBridge.pendingId ?: YtBridge.activeId.value
                 YtBridge.pendingId = null
                 if (startId != null) wv.loadUrl("https://www.youtube.com/watch?v=$startId")
@@ -93,7 +91,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
         }
     )
 
-    // Comandos en vivo (cambio de tema, play/pause/seek/stop)
     LaunchedEffect(Unit) {
         YtBridge.commands.collect { cmd ->
             val c = YtBridge.controller ?: return@collect
@@ -110,34 +107,64 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
     }
 }
 
-// JS que engancha el <video> de la watch page, reporta estado a Android,
-// fuerza autoplay, anula la pausa por "page hidden" (para segundo plano)
-// y remueve overlays de consentimiento/"abrir en app" que tapan el reproductor.
+// Oculta toda la pagina watch y deja SOLO el <video> a pantalla de la caja del WebView.
+// El overlay propio de sonido (#mixSound) se excluye de la regla hidden.
+private const val STYLE_JS = """
+(function(){
+  var s=document.getElementById('mixcss');
+  if(!s){ s=document.createElement('style'); s.id='mixcss'; document.head.appendChild(s); }
+  s.textContent = '*{visibility:hidden!important}' +
+    'video{visibility:visible!important;position:fixed!important;left:0!important;top:0!important;' +
+    'right:0!important;bottom:0!important;width:100%!important;height:100%!important;' +
+    'object-fit:contain!important;z-index:2147483647!important;background:#000!important;margin:0!important;padding:0!important}' +
+    '#mixSound{visibility:visible!important;position:fixed!important;left:0!important;top:0!important;width:100%!important;height:100%!important;' +
+    'z-index:2147483647!important;display:flex!important;align-items:center!important;justify-content:center!important;' +
+    'background:rgba(0,0,0,0.45)!important;color:#fff!important;font:700 16px sans-serif!important;cursor:pointer!important}' +
+    '#mixSound.hide{display:none!important}';
+})();
+"""
+
+// Engancha el <video>: reporta estado, intenta autoplay desmutado con click sintético,
+// y si YouTube lo bloquea muestra el overlay "Toca para el sonido".
 private const val CONTROL_JS = """
 (function(){
+  function ensureOverlay(){
+    var o=document.getElementById('mixSound');
+    if(!o){ o=document.createElement('div'); o.id='mixSound'; o.innerHTML='\\u25B6  Toca para el sonido';
+      o.addEventListener('click',function(){ var v=document.querySelector('video'); if(v){ try{v.muted=false;v.play();}catch(e){} } o.classList.add('hide'); });
+      o.addEventListener('touchend',function(e){ e.preventDefault(); var v=document.querySelector('video'); if(v){ try{v.muted=false;v.play();}catch(e2){} } o.classList.add('hide'); });
+      document.body.appendChild(o);
+    }
+    return o;
+  }
+  function hideOverlay(){ var o=document.getElementById('mixSound'); if(o) o.classList.add('hide'); }
+  function showOverlay(){ ensureOverlay().classList.remove('hide'); }
+
   window.__mixBind=function(){
     var v=document.querySelector('video');
     if(!v){
       if(window.__mixTries===undefined)window.__mixTries=0;
       window.__mixTries++;
-      if(window.__mixTries<80) setTimeout(window.__mixBind,250);
+      if(window.__mixTries<120) setTimeout(window.__mixBind,200);
       return;
     }
     window.__mixTries=0;
     if(!v.__mixbound){
       v.__mixbound=true;
       v.addEventListener('timeupdate',function(){ try{Android.onTime(v.currentTime);Android.onDur(v.duration||0);}catch(e){} });
-      v.addEventListener('play',function(){ try{Android.onState(1);}catch(e){} });
+      v.addEventListener('play',function(){ try{Android.onState(1); if(!v.muted) hideOverlay();}catch(e){} });
       v.addEventListener('pause',function(){ try{Android.onState(2);}catch(e){} });
       v.addEventListener('ended',function(){ try{Android.onState(0);}catch(e){} });
+      v.addEventListener('volumechange',function(){ if(!v.muted) hideOverlay(); });
     }
     try{ Object.defineProperty(document,'hidden',{get:function(){return false;},configurable:true}); }catch(e){}
     try{ Object.defineProperty(document,'visibilityState',{get:function(){return 'visible';},configurable:true}); }catch(e){}
-    var kill=['ytd-enforcement-message-view-model','.ytp-inline-player-small','tp-yt-paper-dialog','ytd-consent-bump-v2-lightbox','#dismiss-button','.ytd-enforcement-message-view-model','ytd-mealbar-promo-renderer'];
-    kill.forEach(function(s){ try{document.querySelectorAll(s).forEach(function(el){el.remove();});}catch(e){} });
+    // intenta liberar autoplay sin toque: click sintético + unmute + play
+    try{ v.dispatchEvent(new MouseEvent('click',{bubbles:true})); }catch(e){}
     try{ v.muted=false; v.play(); }catch(e){}
+    setTimeout(function(){ if(v.paused || v.muted) showOverlay(); }, 700);
   };
-  window.playV=function(){ var v=document.querySelector('video'); if(v){try{v.play();}catch(e){}} };
+  window.playV=function(){ var v=document.querySelector('video'); if(v){try{v.muted=false;v.play();hideOverlay();}catch(e){}} };
   window.pauseV=function(){ var v=document.querySelector('video'); if(v){try{v.pause();}catch(e){}} };
   window.seekV=function(s){ var v=document.querySelector('video'); if(v){try{v.currentTime=s;}catch(e){}} };
   window.stopV=function(){ var v=document.querySelector('video'); if(v){try{v.pause();v.currentTime=0;}catch(e){}} };
