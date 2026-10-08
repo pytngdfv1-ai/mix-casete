@@ -82,7 +82,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var localUri: Uri? = null
 
     init {
-        // Espejar el estado del WebView en la UI del casete
+        // Espeja el estado del WebView en la UI del casete y TRADUCE los codigos
+        // de error del player a mensajes legibles en el banner.
         viewModelScope.launch {
             YtBridge.state.collectLatest { st ->
                 _playState.value = when {
@@ -90,6 +91,17 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                     st.isPlaying -> PlayState.PLAYING
                     st.videoId != null -> PlayState.PAUSED
                     else -> PlayState.STOPPED
+                }
+                if (st.error != null) {
+                    val msg = when (st.error) {
+                        152, 153 -> "YouTube bloqueó el embed (152/153)"
+                        101, 150 -> "El dueño deshabilitó el embed de este video"
+                        100 -> "Video no encontrado o privado"
+                        else -> "YouTube error ${st.error}"
+                    }
+                    _errorInfo.value = ErrorInfo(msg, SourceType.YOUTUBE)
+                } else {
+                    _errorInfo.value = null
                 }
                 if (st.videoId != null) {
                     _cassette.value = _cassette.value.copy(
@@ -130,7 +142,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         YtBridge.emit(if (YtBridge.state.value.isPlaying) YtCmd.Pause else YtCmd.Play)
     }
 
-    fun stop() { YtBridge.emit(YtCmd.Stop); _playState.value = PlayState.STOPPED; _cassette.value = _cassette.value.copy(progress = 0f); stopService() }
+    fun stop() {
+        YtBridge.emit(YtCmd.Stop)
+        _playState.value = PlayState.STOPPED
+        _cassette.value = _cassette.value.copy(progress = 0f)
+        stopService()
+    }
 
     fun recordCurrentTrack() {
         viewModelScope.launch {
@@ -194,7 +211,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
             startService()
             YtBridge.emit(YtCmd.Load(vid, song.title, song.artist))
         } else {
-            // Archivo local: sin WebView; se podria enchufar a ExoPlayer si hace falta
             _errorInfo.value = ErrorInfo("Los archivos locales se reproducen igual; YouTube usa el motor oficial", SourceType.LOCAL)
         }
     }
