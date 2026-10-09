@@ -28,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -50,6 +51,7 @@ import com.mixcasete.app.audio.CassetteState
 import com.mixcasete.app.audio.ErrorInfo
 import com.mixcasete.app.audio.PlayState
 import com.mixcasete.app.audio.RepeatMode
+import com.mixcasete.app.audio.YtBridge
 import com.mixcasete.app.ui.PlayerZones
 import com.mixcasete.app.ui.fillZone
 import kotlinx.coroutines.delay
@@ -63,7 +65,6 @@ private val TrimSilver = Color(0xFFC9C9C9)
 private val PanelDark = Color(0xFF1B1B1B)
 private val DetailDark = Color(0xFF444444)
 private val ActiveGreen = Color(0xFF81C784)
-// Paleta del casete real (foto): cinta cafe-negruzca + corona blanco-hueso
 private val TapeDark = Color(0xFF140D08)
 private val TapeMid = Color(0xFF2A1B10)
 private val CrownWhite = Color(0xFFECECEC)
@@ -96,7 +97,12 @@ fun CassettePlayer(
     onFavorite: () -> Unit,
     onShowVideo: () -> Unit
 ) {
-    // Angulo de giro: avanza solo mientras suena (carretes reales girando).
+    // Progreso leido AQUI (hoja), desde los flows de tick. No sube a SkinLayout/ViewModel,
+    // por lo que el WebView (hermano/raiz) NO se recomponen por segundo -> sin parpadeo.
+    val pos by YtBridge.position.collectAsState()
+    val dur by YtBridge.duration.collectAsState()
+    val progress = if (dur > 0f) (pos / dur).coerceIn(0f, 1f) else 0f
+
     var angle by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(playState) {
         if (playState == PlayState.PLAYING) {
@@ -112,7 +118,7 @@ fun CassettePlayer(
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize()) { drawBody(zones) }
 
-        zones.screen?.let { LcdScreen(modifier = Modifier.fillZone(it), playState = playState, progress = cassette.progress) }
+        zones.screen?.let { LcdScreen(modifier = Modifier.fillZone(it), playState = playState, progress = progress) }
         zones.knobs?.let { KnobsStrip(modifier = Modifier.fillZone(it)) }
 
         CassetteWindow(
@@ -129,7 +135,6 @@ fun CassettePlayer(
             onShuffle = onShuffle, onRepeat = onRepeat, onFavorite = onFavorite
         )
 
-        // Keyboard() vive en PlayerControls.kt -> NO se duplica aca.
         Keyboard(
             modifier = Modifier.fillZone(zones.keyboard),
             playState = playState,
@@ -178,28 +183,23 @@ fun CassetteWindow(modifier: Modifier, cassette: CassetteState, playState: PlayS
         Canvas(Modifier.fillMaxSize()) {
             val w = size.width
             val h = size.height
-
-            // fondo de la ventana (plastico transparente -> deja ver el video detras)
             drawRoundRect(color = Color(0xFF050505).copy(alpha = 0.35f), size = Size(w, h), cornerRadius = CornerRadius(w * 0.03f))
             drawRoundRect(color = TrimSilver.copy(alpha = 0.45f), size = Size(w, h), cornerRadius = CornerRadius(w * 0.03f), style = Stroke(width = w * 0.006f))
 
-            // Geometria tipo foto: carrete IZQUIERDO grande, DERECHO chico, mismos ejes Y
             val cy = h * 0.46f
             val rL = min(w * 0.21f, h * 0.30f)
             val rR = min(w * 0.155f, h * 0.225f)
             val xL = w * 0.33f
             val xR = w * 0.67f
 
-            // cinta tensa entre carretes (parte baja) + rueditas de guia
             val tapeY = cy + rL * 0.92f
             drawRect(color = TapeDark, topLeft = Offset(xL, tapeY - rL * 0.05f), size = Size(xR - xL, rL * 0.10f))
             drawGuideWheel(xL - rL * 0.55f, tapeY + rL * 0.18f, rL * 0.13f, angle)
             drawGuideWheel(xR + rR * 0.55f, tapeY + rR * 0.18f, rR * 0.15f, -angle)
 
             drawReel(xL, cy, rL, angle)
-            drawReel(xR, cy, rR, -angle * (rL / rR)) // el chico gira mas rapido (conserva cinta)
+            drawReel(xR, cy, rR, -angle * (rL / rR))
 
-            // simbolo play/pausa entre carretes
             val midX = w * 0.5f
             if (playState == PlayState.PLAYING) {
                 drawRect(color = TrimSilver, topLeft = Offset(midX - rL * 0.07f, cy - rL * 0.16f), size = Size(rL * 0.05f, rL * 0.32f))
@@ -214,7 +214,6 @@ fun CassetteWindow(modifier: Modifier, cassette: CassetteState, playState: PlayS
                 drawPath(p, TrimSilver)
             }
 
-            // reflejos del acrilico
             drawLine(Color.White.copy(alpha = 0.08f), Offset(w * 0.16f, h * 0.08f), Offset(w * 0.40f, h * 0.92f), strokeWidth = w * 0.04f)
             drawLine(Color.White.copy(alpha = 0.05f), Offset(w * 0.28f, h * 0.08f), Offset(w * 0.52f, h * 0.92f), strokeWidth = w * 0.025f)
         }
@@ -232,47 +231,29 @@ fun CassetteWindow(modifier: Modifier, cassette: CassetteState, playState: PlayS
     }
 }
 
-// Carrete real: cinta oscura + corona blanca dentada (aro + dientes radiales + buje con pestañas)
 private fun DrawScope.drawReel(cx: Float, cy: Float, r: Float, angle: Float) {
-    // disco de cinta
     drawCircle(color = TapeDark, radius = r, center = Offset(cx, cy))
     drawCircle(color = TapeMid, radius = r * 0.92f, center = Offset(cx, cy), style = Stroke(width = r * 0.05f))
-
-    val cr = r * 0.46f          // radio exterior de la corona
-    val dw = r * 0.085f         // ancho de diente
+    val cr = r * 0.46f
+    val dw = r * 0.085f
     val slots = 18
-
     rotate(degrees = angle, pivot = Offset(cx, cy)) {
-        // aro exterior blanco
         drawCircle(color = CrownWhite, radius = cr, center = Offset(cx, cy), style = Stroke(width = r * 0.085f))
-        // dientes radiales blancos (del aro hacia el buje)
         for (i in 0 until slots) {
             rotate(degrees = i * 360f / slots, pivot = Offset(cx, cy)) {
-                drawRect(
-                    color = CrownWhite,
-                    topLeft = Offset(cx - dw / 2f, cy - cr + r * 0.02f),
-                    size = Size(dw, cr * 0.42f)
-                )
+                drawRect(color = CrownWhite, topLeft = Offset(cx - dw / 2f, cy - cr + r * 0.02f), size = Size(dw, cr * 0.42f))
             }
         }
-        // buje blanco
         drawCircle(color = CrownWhite, radius = cr * 0.55f, center = Offset(cx, cy))
-        // hueco central
         drawCircle(color = HubHole, radius = cr * 0.30f, center = Offset(cx, cy))
-        // 3 pestanas blancas dentro del hueco (como la foto)
         for (i in 0 until 3) {
             rotate(degrees = i * 120f, pivot = Offset(cx, cy)) {
-                drawRect(
-                    color = CrownWhite,
-                    topLeft = Offset(cx - cr * 0.07f, cy - cr * 0.30f),
-                    size = Size(cr * 0.14f, cr * 0.16f)
-                )
+                drawRect(color = CrownWhite, topLeft = Offset(cx - cr * 0.07f, cy - cr * 0.30f), size = Size(cr * 0.14f, cr * 0.16f))
             }
         }
     }
 }
 
-// Ruedita de guia de la cinta (abajo, a los lados)
 private fun DrawScope.drawGuideWheel(cx: Float, cy: Float, r: Float, angle: Float) {
     drawCircle(color = Color(0xFF3A3A3A), radius = r, center = Offset(cx, cy))
     rotate(degrees = angle, pivot = Offset(cx, cy)) {
