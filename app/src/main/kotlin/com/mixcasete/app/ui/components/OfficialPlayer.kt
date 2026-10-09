@@ -49,10 +49,7 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                 settings.builtInZoomControls = false
                 settings.displayZoomControls = false
                 settings.allowFileAccess = false
-                settings.cacheMode = android.webkit.WebSettings.LOAD_DEFAULT
 
-                // UA real SIN el marcador "; wv": evita que YouTube mande a la app
-                // nativa y sirve el reproductor HTML5 de la watch page.
                 val baseUA = settings.userAgentString
                 settings.userAgentString = baseUA.replace("; wv", "").trim()
 
@@ -61,15 +58,16 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
                     @JavascriptInterface fun onState(s: Int) {
                         YtBridge.setState { st -> st.copy(isPlaying = s == 1, error = if (s == -1) st.error else null) }
                     }
-                    @JavascriptInterface fun onTime(t: Double) { YtBridge.setState { it.copy(positionSec = t.toFloat()) } }
-                    @JavascriptInterface fun onDur(d: Double) { YtBridge.setState { it.copy(durationSec = d.toFloat()) } }
+                    // Solo progreso barato -> positionFlow (hoja), no toca el arbol del WebView.
+                    @JavascriptInterface fun onTime(t: Double) { YtBridge.setPosition(t.toFloat()) }
+                    @JavascriptInterface fun onDur(d: Double) { YtBridge.setDuration(d.toFloat()) }
                     @JavascriptInterface fun onErr(e: Int) { YtBridge.setState { it.copy(error = e, isPlaying = false) } }
                 }, "Android")
 
                 webViewClient = object : WebViewClient() {
                     override fun onPageFinished(view: WebView?, url: String?) {
-                        view?.evaluateJavascript(STYLE_JS, null)   // recorta a solo <video>
-                        view?.evaluateJavascript(CONTROL_JS, null)  // engancha y controla el video
+                        view?.evaluateJavascript(STYLE_JS, null)
+                        view?.evaluateJavascript(CONTROL_JS, null)
                     }
                 }
                 webChromeClient = WebChromeClient()
@@ -107,8 +105,6 @@ fun OfficialPlayer(modifier: Modifier = Modifier) {
     }
 }
 
-// Oculta toda la pagina watch y deja SOLO el <video> a pantalla de la caja del WebView.
-// El overlay propio de sonido (#mixSound) se excluye de la regla hidden.
 private const val STYLE_JS = """
 (function(){
   var s=document.getElementById('mixcss');
@@ -124,15 +120,15 @@ private const val STYLE_JS = """
 })();
 """
 
-// Engancha el <video>: reporta estado, intenta autoplay desmutado con click sintético,
-// y si YouTube lo bloquea muestra el overlay "Toca para el sonido".
+// SIN setInterval (causaba el parpadeo de 1s) y SIN dispatchEvent(click) (toggleaba play/pause).
+// El progreso sale solo por timeupdate (nativo). duration se reporta en loadedmetadata/play.
 private const val CONTROL_JS = """
 (function(){
   function ensureOverlay(){
     var o=document.getElementById('mixSound');
     if(!o){ o=document.createElement('div'); o.id='mixSound'; o.innerHTML='\\u25B6  Toca para el sonido';
-      o.addEventListener('click',function(){ var v=document.querySelector('video'); if(v){ try{v.muted=false;v.play();}catch(e){} } o.classList.add('hide'); });
-      o.addEventListener('touchend',function(e){ e.preventDefault(); var v=document.querySelector('video'); if(v){ try{v.muted=false;v.play();}catch(e2){} } o.classList.add('hide'); });
+      var go=function(){ var v=document.querySelector('video'); if(v){ try{v.muted=false;v.play();}catch(e){} } o.classList.add('hide'); };
+      o.addEventListener('click',go); o.addEventListener('touchend',function(e){ e.preventDefault(); go(); });
       document.body.appendChild(o);
     }
     return o;
@@ -152,6 +148,7 @@ private const val CONTROL_JS = """
     if(!v.__mixbound){
       v.__mixbound=true;
       v.addEventListener('timeupdate',function(){ try{Android.onTime(v.currentTime);Android.onDur(v.duration||0);}catch(e){} });
+      v.addEventListener('loadedmetadata',function(){ try{Android.onDur(v.duration||0);}catch(e){} });
       v.addEventListener('play',function(){ try{Android.onState(1); if(!v.muted) hideOverlay();}catch(e){} });
       v.addEventListener('pause',function(){ try{Android.onState(2);}catch(e){} });
       v.addEventListener('ended',function(){ try{Android.onState(0);}catch(e){} });
@@ -159,8 +156,6 @@ private const val CONTROL_JS = """
     }
     try{ Object.defineProperty(document,'hidden',{get:function(){return false;},configurable:true}); }catch(e){}
     try{ Object.defineProperty(document,'visibilityState',{get:function(){return 'visible';},configurable:true}); }catch(e){}
-    // intenta liberar autoplay sin toque: click sintético + unmute + play
-    try{ v.dispatchEvent(new MouseEvent('click',{bubbles:true})); }catch(e){}
     try{ v.muted=false; v.play(); }catch(e){}
     setTimeout(function(){ if(v.paused || v.muted) showOverlay(); }, 700);
   };
