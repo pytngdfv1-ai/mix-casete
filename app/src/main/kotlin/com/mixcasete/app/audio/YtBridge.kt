@@ -7,13 +7,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+// Estado de CONTROL: cambia solo en load/play/pause/ended/error/stop.
+// NO incluye el tick de progreso (ese va por positionFlow/durationFlow)
+// para que un reporte de tiempo no recomponga el arbol que contiene el WebView.
 data class YtState(
     val videoId: String? = null,
     val title: String = "",
     val artist: String = "",
     val isPlaying: Boolean = false,
-    val positionSec: Float = 0f,
-    val durationSec: Float = 0f,
+    val stopped: Boolean = false,
     val ready: Boolean = false,
     val error: Int? = null
 )
@@ -33,8 +35,12 @@ object YtBridge {
     private val _state = MutableStateFlow(YtState())
     val state: StateFlow<YtState> = _state.asStateFlow()
 
-    // El tema que DEBE estar sonando. Lo setea emit() de forma deterministica,
-    // independiente de si el WebView ya esta montado. Rompe el deadlock de montaje.
+    // Tick de progreso: lo consume SOLO CassettePlayer (hoja). Barato, sin cascada.
+    private val _position = MutableStateFlow(0f)
+    val position: StateFlow<Float> = _position.asStateFlow()
+    private val _duration = MutableStateFlow(0f)
+    val duration: StateFlow<Float> = _duration.asStateFlow()
+
     private val _activeId = MutableStateFlow<String?>(null)
     val activeId: StateFlow<String?> = _activeId.asStateFlow()
 
@@ -44,28 +50,34 @@ object YtBridge {
     var controller: YtController? = null
     var pendingId: String? = null
 
+    fun setPosition(sec: Float) { _position.value = sec }
+    fun setDuration(d: Float) { _duration.value = d }
+    fun setState(update: (YtState) -> YtState) { _state.value = update(_state.value) }
+
     fun emit(cmd: YtCmd) {
         when (cmd) {
             is YtCmd.Load -> {
-                // Setear estado SIEMPRE, aunque el WebView no exista todavia
                 _state.value = _state.value.copy(
                     videoId = cmd.id, title = cmd.title, artist = cmd.artist,
-                    positionSec = 0f, durationSec = 0f, error = null
+                    isPlaying = false, stopped = false, error = null
                 )
+                _position.value = 0f; _duration.value = 0f
                 _activeId.value = cmd.id
                 if (controller == null) pendingId = cmd.id
             }
             YtCmd.Stop -> {
-                _state.value = _state.value.copy(videoId = null, isPlaying = false)
-                _activeId.value = null
-                pendingId = null
+                // NO limpiamos activeId: asi el WebView NO se desmonta ni se destruye.
+                // Solo pausa + reset de posicion; PLAY reanuda con el gesto ya concedido.
+                _state.value = _state.value.copy(isPlaying = false, stopped = true)
+                _position.value = 0f
             }
-            else -> { /* Play/Pause/Toggle/Seek/Next/Prev: solo ejecucion, sin cambiar activeId */ }
+            YtCmd.Play, YtCmd.Toggle -> {
+                _state.value = _state.value.copy(stopped = false)
+            }
+            else -> { /* Pause/Seek/Next/Prev: solo ejecucion */ }
         }
         _commands.tryEmit(cmd)
     }
-
-    fun setState(update: (YtState) -> YtState) { _state.value = update(_state.value) }
 
     interface YtController {
         fun load(id: String)
