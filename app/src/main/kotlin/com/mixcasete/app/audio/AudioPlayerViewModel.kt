@@ -23,10 +23,11 @@ import kotlinx.coroutines.launch
 enum class PlayState { STOPPED, PLAYING, PAUSED, EJECTED, ERROR }
 enum class RepeatMode { OFF, ONE, ALL }
 
+// Sin campo 'progress': el progreso vive en YtBridge.position/duration y lo consume
+// solo CassettePlayer, para que el tick NO recomponga SkinLayout (padre del WebView).
 data class CassetteState(
     val title: String = "Mix Tape Vol. 1",
     val artist: String = "DJ Retro",
-    val progress: Float = 0f,
     val sourceLabel: String = ""
 )
 data class ErrorInfo(val message: String, val source: SourceType?)
@@ -82,12 +83,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var localUri: Uri? = null
 
     init {
-        // Espeja el estado del WebView en la UI del casete y TRADUCE los codigos
-        // de error del player a mensajes legibles en el banner.
+        // Solo estado de CONTROL (cambia en play/pause/ended/error/load/stop), NO por tick.
         viewModelScope.launch {
             YtBridge.state.collectLatest { st ->
                 _playState.value = when {
                     st.error != null -> PlayState.ERROR
+                    st.stopped -> PlayState.STOPPED
                     st.isPlaying -> PlayState.PLAYING
                     st.videoId != null -> PlayState.PAUSED
                     else -> PlayState.STOPPED
@@ -106,14 +107,12 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
                 if (st.videoId != null) {
                     _cassette.value = _cassette.value.copy(
                         title = st.title.ifBlank { _cassette.value.title },
-                        artist = st.artist.ifBlank { _cassette.value.artist },
-                        progress = if (st.durationSec > 0) st.positionSec / st.durationSec else _cassette.value.progress
+                        artist = st.artist.ifBlank { _cassette.value.artist }
                     )
                     _currentVideoUrl.value = "https://www.youtube.com/watch?v=${st.videoId}"
                 }
             }
         }
-        // Atender comandos de la notificacion (next/prev)
         viewModelScope.launch {
             YtBridge.commands.collectLatest { cmd ->
                 when (cmd) {
@@ -131,10 +130,6 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         } catch (e: Exception) { }
     }
 
-    private fun stopService() {
-        try { getApplication<Application>().stopService(Intent(getApplication(), PlaybackService::class.java)) } catch (e: Exception) { }
-    }
-
     private fun flash(m: String) { _recMessage.value = m; viewModelScope.launch { delay(2000); _recMessage.value = null } }
 
     fun togglePlayPause() {
@@ -142,11 +137,11 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         YtBridge.emit(if (YtBridge.state.value.isPlaying) YtCmd.Pause else YtCmd.Play)
     }
 
+    // STOP: pausa + reset, PERO sin desmontar el WebView ni parar el service.
+    // Asi PLAY reanuda sobre el mismo documento (gesto ya concedido) -> arranca siempre.
     fun stop() {
         YtBridge.emit(YtCmd.Stop)
         _playState.value = PlayState.STOPPED
-        _cassette.value = _cassette.value.copy(progress = 0f)
-        stopService()
     }
 
     fun recordCurrentTrack() {
@@ -168,10 +163,10 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         flash("● '${result.title}' quedo como siguiente")
     }
 
-    fun rewind() { YtBridge.emit(YtCmd.Seek((YtBridge.state.value.positionSec - 10).coerceAtLeast(0f))) }
+    fun rewind() { YtBridge.emit(YtCmd.Seek((YtBridge.position.value - 10f).coerceAtLeast(0f))) }
     fun fastForward() {
-        val d = YtBridge.state.value.durationSec
-        YtBridge.emit(YtCmd.Seek((YtBridge.state.value.positionSec + 10).coerceAtMost(d)))
+        val d = YtBridge.duration.value
+        YtBridge.emit(YtCmd.Seek((YtBridge.position.value + 10f).coerceAtMost(d)))
     }
     fun toggleCalibration() { _calibrationMode.value = !_calibrationMode.value }
     fun setLocalUri(uri: Uri) { localUri = uri }
@@ -204,7 +199,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         if (index < 0 || index >= _currentPlaylist.value.size) return
         val song = _currentPlaylist.value[index]
         _currentSongIndex.value = index
-        _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist, progress = 0f)
+        _cassette.value = _cassette.value.copy(title = song.title, artist = song.artist)
         _currentVideoUrl.value = song.videoUrl
         val vid = extractVideoId(song.videoUrl)
         if (vid != null) {
@@ -238,5 +233,8 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     fun togglePlaylistScreen() { _showPlaylistScreen.value = !_showPlaylistScreen.value }
     fun toggleLoginScreen() { _showLoginScreen.value = !_showLoginScreen.value }
 
-    override fun onCleared() { stopService(); super.onCleared() }
+    override fun onCleared() {
+        try { getApplication<Application>().stopService(Intent(getApplication(), PlaybackService::class.java)) } catch (e: Exception) { }
+        super.onCleared()
+    }
 }
