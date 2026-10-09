@@ -93,7 +93,7 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
     val repeatMode by viewModel.repeatMode.collectAsState()
     val currentPlaylist by viewModel.currentPlaylist.collectAsState()
     val currentSongIndex by viewModel.currentSongIndex.collectAsState()
-    val activeId by YtBridge.activeId.collectAsState()   // <-- decide el montaje, no el WebView
+    val activeId by YtBridge.activeId.collectAsState()
 
     var videoFront by remember { mutableStateOf(false) }
     val flip by animateFloatAsState(if (videoFront) 1f else 0f, tween(400))
@@ -111,10 +111,14 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
         else { val w = maxWidth * 0.96f; val h = maxHeight * 0.92f; bodyW = w; bodyH = if (h < w * 0.48f) h else w * 0.48f }
 
         Box(modifier = Modifier.width(bodyW).height(bodyH)) {
+            // VIDEO: con el casete puesto -> solo dentro de la ventana (centrado, coincide
+            // con el marco). Al dar vuelta (flip>0.5) -> cuerpo completo (video pleno).
             if (hasVideo) {
-                OfficialPlayer(modifier = Modifier.fillMaxSize())
+                val playerModifier = if (flip > 0.5f) Modifier.fillMaxSize() else Modifier.fillZone(zones.window)
+                OfficialPlayer(modifier = playerModifier)
             }
 
+            // CASETE translucido encima (con animacion de vuelta)
             if (flip < 0.99f) {
                 Box(
                     Modifier.fillMaxSize().graphicsLayer {
@@ -137,6 +141,7 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 }
             }
 
+            // Icono casete para volver (cuando el video esta al frente)
             if (flip > 0.5f) {
                 IconButton(
                     onClick = { videoFront = false },
