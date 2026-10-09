@@ -15,18 +15,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
-import androidx.compose.material.icons.filled.Forward
-import androidx.compose.material.icons.filled.Pause
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.RepeatOne
-import androidx.compose.material.icons.filled.Rewind
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -47,7 +42,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -100,6 +94,7 @@ fun CassettePlayer(
     onFavorite: () -> Unit,
     onShowVideo: () -> Unit
 ) {
+    // Angulo de giro de los carretes: avanza solo mientras suena.
     var angle by remember { mutableFloatStateOf(0f) }
     LaunchedEffect(playState) {
         if (playState == PlayState.PLAYING) {
@@ -132,6 +127,7 @@ fun CassettePlayer(
             onShuffle = onShuffle, onRepeat = onRepeat, onFavorite = onFavorite
         )
 
+        // Keyboard() vive en PlayerControls.kt (no se duplica aca).
         Keyboard(
             modifier = Modifier.fillZone(zones.keyboard),
             playState = playState,
@@ -224,16 +220,17 @@ private fun DrawScope.drawReel(cx: Float, cy: Float, r: Float, angle: Float, clo
     drawCircle(color = ReelBrown, radius = r, center = Offset(cx, cy))
     drawCircle(color = ReelRing, radius = r * 0.78f, center = Offset(cx, cy), style = Stroke(width = r * 0.06f))
     drawCircle(color = ReelBrown, radius = r * 0.62f, center = Offset(cx, cy))
-    rotate(dir, center = Offset(cx, cy)) {
+    // FIX: rotate usa 'pivot', no 'center'
+    rotate(dir, pivot = Offset(cx, cy)) {
         drawLine(color = ReelRing, start = Offset(cx, cy - r * 0.62f), end = Offset(cx, cy - r * 0.30f), strokeWidth = r * 0.06f)
     }
-    rotate(dir, center = Offset(cx, cy)) {
+    rotate(dir, pivot = Offset(cx, cy)) {
         val gr = r * 0.42f
         val teeth = 8
         val toothLen = gr * 0.34f
         for (i in 0 until teeth) {
             val a = i * 360f / teeth
-            rotate(a, center = Offset(cx, cy)) {
+            rotate(a, pivot = Offset(cx, cy)) {
                 drawRoundRect(
                     color = GearWhite,
                     topLeft = Offset(cx - gr * 0.16f, cy - gr - toothLen),
@@ -266,42 +263,6 @@ fun FunctionBar(
         IconButton(onClick = onFavorite, modifier = Modifier.weight(1f)) {
             Icon(if (isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, "Favorito", tint = if (isFavorite) Color(0xFFE57373) else TrimSilver)
         }
-    }
-}
-
-@Composable
-fun Keyboard(
-    modifier: Modifier, playState: PlayState,
-    onPlayPause: () -> Unit, onStop: () -> Unit, onRecord: () -> Unit,
-    onRewind: () -> Unit, onFastForward: () -> Unit
-) {
-    Row(modifier = modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        KeyButton(Modifier.weight(1f), Icons.Filled.Rewind, "REW", TrimSilver, onRewind)
-        KeyButton(Modifier.weight(1f), Icons.Filled.PlayArrow, "PLAY", TrimSilver, onPlayPause)
-        KeyButton(Modifier.weight(1f), Icons.Filled.Pause, "PAUSE", TrimSilver, onPlayPause)
-        KeyButton(Modifier.weight(1f), Icons.Filled.Stop, "STOP", TrimSilver, onStop)
-        KeyButton(Modifier.weight(1f), Icons.Filled.Stop, "REC", Color(0xFFE53935), onRecord, filledDot = true)
-        KeyButton(Modifier.weight(1f), Icons.Filled.Forward, "FF", TrimSilver, onFastForward)
-    }
-}
-
-@Composable
-private fun KeyButton(
-    modifier: Modifier, icon: ImageVector, label: String, tint: Color, onClick: () -> Unit, filledDot: Boolean = false
-) {
-    Column(
-        modifier = modifier
-            .border(1.dp, TrimSilver.copy(alpha = 0.6f), RoundedCornerShape(3.dp))
-            .clickable { onClick() }
-            .padding(vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        if (filledDot) {
-            Box(Modifier.size(14.dp).background(tint, RoundedCornerShape(50)))
-        } else {
-            Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(16.dp))
-        }
-        Text(label, color = TrimSilver, fontSize = 8.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
