@@ -23,11 +23,13 @@ import kotlinx.coroutines.launch
 enum class PlayState { STOPPED, PLAYING, PAUSED, EJECTED, ERROR }
 enum class RepeatMode { OFF, ONE, ALL }
 
-// Sin campo 'progress': el progreso vive en YtBridge.position/duration y lo consume
-// solo CassettePlayer, para que el tick NO recomponga SkinLayout (padre del WebView).
+// 'progress' se restaura SOLO para que compile el residuo Cassette.kt.
+// NO se escribe por tick (el progreso real vive en YtBridge.position/duration y
+// lo consume la hoja CassettePlayer), para no recomponer SkinLayout/WebView.
 data class CassetteState(
     val title: String = "Mix Tape Vol. 1",
     val artist: String = "DJ Retro",
+    val progress: Float = 0f,
     val sourceLabel: String = ""
 )
 data class ErrorInfo(val message: String, val source: SourceType?)
@@ -83,7 +85,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
     private var localUri: Uri? = null
 
     init {
-        // Solo estado de CONTROL (cambia en play/pause/ended/error/load/stop), NO por tick.
+        // Solo estado de CONTROL (play/pause/ended/error/load/stop). NUNCA por tick.
         viewModelScope.launch {
             YtBridge.state.collectLatest { st ->
                 _playState.value = when {
@@ -137,8 +139,7 @@ class AudioPlayerViewModel(application: Application) : AndroidViewModel(applicat
         YtBridge.emit(if (YtBridge.state.value.isPlaying) YtCmd.Pause else YtCmd.Play)
     }
 
-    // STOP: pausa + reset, PERO sin desmontar el WebView ni parar el service.
-    // Asi PLAY reanuda sobre el mismo documento (gesto ya concedido) -> arranca siempre.
+    // STOP: pausa + reset, sin desmontar el WebView ni parar el service -> PLAY reanuda.
     fun stop() {
         YtBridge.emit(YtCmd.Stop)
         _playState.value = PlayState.STOPPED
