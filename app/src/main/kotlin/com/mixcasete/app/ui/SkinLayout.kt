@@ -110,15 +110,15 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
         if (isPortrait) { val h = maxHeight * 0.88f; val w = maxWidth * 0.92f; bodyH = h; bodyW = if (w < h * 0.62f) w else h * 0.62f }
         else { val w = maxWidth * 0.96f; val h = maxHeight * 0.92f; bodyW = w; bodyH = if (h < w * 0.48f) h else w * 0.48f }
 
+        // IMPORTANTE: el WebView va HERMANO DIRECTO de este Box, SIN graphicsLayer(rotationY)
+        // encima. La rotacion del telefono ya no afecta al video -> no se pausa al cambiar orientacion.
         Box(modifier = Modifier.width(bodyW).height(bodyH)) {
-            // VIDEO: con el casete puesto -> solo dentro de la ventana (centrado, coincide
-            // con el marco). Al dar vuelta (flip>0.5) -> cuerpo completo (video pleno).
             if (hasVideo) {
                 val playerModifier = if (flip > 0.5f) Modifier.fillMaxSize() else Modifier.fillZone(zones.window)
                 OfficialPlayer(modifier = playerModifier)
             }
 
-            // CASETE translucido encima (con animacion de vuelta)
+            // El casete SI lleva su flip, pero es OTRO hijo del Box: su rotationY no toca al WebView.
             if (flip < 0.99f) {
                 Box(
                     Modifier.fillMaxSize().graphicsLayer {
@@ -141,7 +141,6 @@ fun SkinLayout(viewModel: AudioPlayerViewModel = viewModel()) {
                 }
             }
 
-            // Icono casete para volver (cuando el video esta al frente)
             if (flip > 0.5f) {
                 IconButton(
                     onClick = { videoFront = false },
